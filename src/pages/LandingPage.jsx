@@ -47,23 +47,23 @@ const CORE_FEATURES = [
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5] flex flex-col">
+    <div className="min-h-screen bg-[#070709] text-[#F4F4F7] flex flex-col">
       {/* Navbar */}
-      <header className="sticky top-0 z-40 border-b border-[#27272F] bg-[#09090B]/85 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-[#22222B] bg-[#0A0A0E]/85 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <Logo to="/" />
 
-          <nav className="hidden md:flex items-center gap-7 text-sm text-[#A1A1AA]">
-            <a href="#preview" className="hover:text-[#F4F4F5] transition-colors">
+          <nav className="hidden md:flex items-center gap-7 text-sm text-[#A1A1B0]">
+            <a href="#preview" className="hover:text-[#F4F4F7] transition-colors">
               Product
             </a>
-            <a href="#modes" className="hover:text-[#F4F4F5] transition-colors">
+            <a href="#modes" className="hover:text-[#F4F4F7] transition-colors">
               Modes
             </a>
-            <a href="#features" className="hover:text-[#F4F4F5] transition-colors">
+            <a href="#features" className="hover:text-[#F4F4F7] transition-colors">
               Features
             </a>
-            <a href="#extension" className="hover:text-[#F4F4F5] transition-colors">
+            <a href="#extension" className="hover:text-[#F4F4F7] transition-colors">
               Extension
             </a>
           </nav>
@@ -85,19 +85,19 @@ export function LandingPage() {
 
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative overflow-hidden border-b border-[#27272F]">
+        <section className="relative overflow-hidden border-b border-[#22222B]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(139,92,246,0.14),transparent_55%)]" />
           <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-20 pb-16 sm:pt-28 sm:pb-24 text-center relative">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#111114] border border-[#27272F] text-xs text-[#A1A1AA] mb-6">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#101015] border border-[#22222B] text-xs text-[#A1A1B0] mb-6">
               <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE]" />
               <span>Listen. Understand. Discuss. Create.</span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-[#F4F4F5] leading-[1.1] max-w-3xl mx-auto">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-[#F4F4F7] font-display leading-[1.08] max-w-3xl mx-auto">
               Every recording has a story worth exploring.
             </h1>
 
-            <p className="mt-5 text-base sm:text-lg text-[#A1A1AA] max-w-2xl mx-auto leading-relaxed">
+            <p className="mt-5 text-base sm:text-lg text-[#A1A1B0] max-w-2xl mx-auto leading-relaxed">
               Turn long recordings into collaborative conversations, meaningful
               insights and shareable moments.
             </p>

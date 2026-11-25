@@ -9,11 +9,11 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-lg border border-[#27272F] ${
-        elevated ? 'bg-[#18181D]' : 'bg-[#111114]'
+      className={`rounded-xl border border-[#22222B] ${
+        elevated ? 'bg-[#16161D]' : 'bg-[#101015]'
       } ${
         interactive
-          ? 'transition-colors duration-150 hover:border-[#3F3F46] hover:bg-[#16161B]'
+          ? 'transition-all duration-150 hover:border-[#343442] hover:bg-[#14141B]'
           : ''
       } ${className}`}
       {...props}

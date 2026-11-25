@@ -26,16 +26,16 @@ export function Dropdown({
         {trigger || (
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#18181D] border border-[#27272F] text-xs font-medium text-[#F4F4F5]"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#16161D] border border-[#22222B] text-xs font-medium text-[#F4F4F7]"
           >
-            Options <ChevronDown className="w-3.5 h-3.5 text-[#A1A1AA]" />
+            Options <ChevronDown className="w-3.5 h-3.5 text-[#A1A1B0]" />
           </button>
         )}
       </div>
 
       {open && (
         <div
-          className={`absolute z-40 mt-1.5 min-w-44 rounded-lg bg-[#18181D] border border-[#27272F] shadow-xl py-1 ${
+          className={`absolute z-40 mt-1.5 min-w-48 rounded-xl bg-[#181820] border border-[#22222B] shadow-2xl py-1.5 ${
             align === 'left' ? 'left-0' : 'right-0'
           }`}
         >
@@ -47,10 +47,10 @@ export function Dropdown({
                 item.onClick?.()
                 setOpen(false)
               }}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors cursor-pointer ${
+              className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-xs transition-colors cursor-pointer ${
                 item.active
-                  ? 'bg-[#8B5CF6]/15 text-[#F4F4F5]'
-                  : 'text-[#A1A1AA] hover:bg-[#222229] hover:text-[#F4F4F5]'
+                  ? 'bg-[#8B5CF6]/15 text-[#F4F4F7]'
+                  : 'text-[#A1A1B0] hover:bg-[#22222B]/60 hover:text-[#F4F4F7]'
               }`}
             >
               {item.icon && <item.icon className="w-3.5 h-3.5 shrink-0" />}

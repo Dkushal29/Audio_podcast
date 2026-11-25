@@ -21,20 +21,20 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5] flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-[#070709] text-[#F4F4F7] flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex justify-center">
           <Logo to="/" />
         </div>
 
-        <Card className="p-6 space-y-5">
+        <Card className="p-6 sm:p-7 space-y-5 shadow-2xl">
           {!sent ? (
             <>
               <div className="space-y-1">
-                <h1 className="text-xl font-semibold text-[#F4F4F5]">
+                <h1 className="text-xl font-bold text-[#F4F4F7] font-display">
                   Reset your password
                 </h1>
-                <p className="text-xs text-[#A1A1AA]">
+                <p className="text-xs text-[#A1A1B0]">
                   Enter your email and we will simulate a password reset link
                   (demo UI).
                 </p>

@@ -135,7 +135,7 @@ export function AudioPlayer({
   }
 
   return (
-    <div className="rounded-lg bg-[#111114] border border-[#27272F] p-4 sm:p-5 space-y-4">
+    <div className="rounded-xl bg-[#101015] border border-[#22222B] p-4 sm:p-5 space-y-4 shadow-lg">
       {/* Waveform + Markers */}
       <Waveform
         audioUrl={recording.audioUrl}
@@ -230,16 +230,16 @@ export function AudioPlayer({
             <RotateCw className="w-4 h-4" />
           </button>
 
-          <div className="ml-2 font-mono text-xs text-[#F4F4F5] bg-[#09090B] border border-[#27272F] px-2.5 py-1.5 rounded-md">
+          <div className="ml-2 font-mono-time text-xs text-[#F4F4F7] bg-[#08080B] border border-[#22222B] px-3 py-1.5 rounded-lg">
             <span>{formatTime(currentTime)}</span>
-            <span className="text-[#71717A] mx-1">/</span>
-            <span className="text-[#A1A1AA]">{formatTime(duration)}</span>
+            <span className="text-[#6E6E7E] mx-1.5">/</span>
+            <span className="text-[#A1A1B0]">{formatTime(duration)}</span>
           </div>
         </div>
 
         {/* Speed, Loop, Volume */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex items-center bg-[#09090B] border border-[#27272F] rounded-lg p-0.5">
+          <div className="flex items-center bg-[#08080B] border border-[#22222B] rounded-lg p-0.5">
             {SPEEDS.map((s) => (
               <button
                 key={s}
@@ -247,8 +247,8 @@ export function AudioPlayer({
                 onClick={() => setSpeed(s)}
                 className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer ${
                   speed === s
-                    ? 'bg-[#18181D] text-[#F4F4F5]'
-                    : 'text-[#A1A1AA] hover:text-[#F4F4F5]'
+                    ? 'bg-[#16161D] text-[#F4F4F7]'
+                    : 'text-[#A1A1B0] hover:text-[#F4F4F7]'
                 }`}
               >
                 {s}x
@@ -262,7 +262,7 @@ export function AudioPlayer({
             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
               isLooping
                 ? 'bg-[#8B5CF6]/15 border-[#8B5CF6]/40 text-[#A78BFA]'
-                : 'bg-[#09090B] border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5]'
+                : 'bg-[#08080B] border-[#22222B] text-[#A1A1B0] hover:text-[#F4F4F7]'
             }`}
             title="Toggle loop playback"
           >
@@ -273,7 +273,7 @@ export function AudioPlayer({
           <button
             type="button"
             onClick={handleToggleMute}
-            className="p-2 rounded-lg bg-[#09090B] border border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5] transition-colors cursor-pointer"
+            className="p-2 rounded-lg bg-[#08080B] border border-[#22222B] text-[#A1A1B0] hover:text-[#F4F4F7] transition-colors cursor-pointer"
             title={isMuted ? 'Unmute' : 'Mute'}
           >
             {isMuted ? (

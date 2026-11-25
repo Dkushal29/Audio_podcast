@@ -88,9 +88,9 @@ export function ClipSharePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5]">
-      <header className="border-b border-[#27272F] bg-[#09090B]/90 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+    <div className="min-h-screen bg-[#070709] text-[#F4F4F7]">
+      <header className="border-b border-[#22222B] bg-[#0A0A0E]/90 backdrop-blur-md">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
           <Logo to="/" size="sm" />
           <div className="flex items-center gap-2">
             <Button size="sm" variant="secondary" onClick={handleCopyLink}>

@@ -55,13 +55,13 @@ export function WorkspaceSelectionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5] flex flex-col">
-      <header className="h-16 px-4 sm:px-8 border-b border-[#27272F] flex items-center justify-between">
+    <div className="min-h-screen bg-[#070709] text-[#F4F4F7] flex flex-col">
+      <header className="h-16 px-4 sm:px-8 border-b border-[#22222B] bg-[#0A0A0E]/85 backdrop-blur-md flex items-center justify-between">
         <Logo to="/" />
         <button
           type="button"
           onClick={() => navigate('/app')}
-          className="text-xs text-[#A1A1AA] hover:text-[#F4F4F5] cursor-pointer"
+          className="text-xs font-medium text-[#A1A1B0] hover:text-[#F4F4F7] cursor-pointer"
         >
           Go to Dashboard
         </button>
@@ -70,13 +70,13 @@ export function WorkspaceSelectionPage() {
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-4xl space-y-8">
           <div className="text-center space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#8B5CF6]">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#A78BFA]">
               Choose Your Workspace
             </span>
-            <h1 className="text-3xl font-semibold tracking-tight text-[#F4F4F5]">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[#F4F4F7] font-display">
               How are you using EchoSpace today?
             </h1>
-            <p className="text-sm text-[#A1A1AA]">
+            <p className="text-sm text-[#A1A1B0]">
               Both workspaces share the same audio engine — you can switch modes
               anytime.
             </p>

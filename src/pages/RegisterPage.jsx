@@ -51,18 +51,19 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#09090B] text-[#F4F4F5] flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen bg-[#070709] text-[#F4F4F7] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.08),transparent_50%)]" />
+      <div className="w-full max-w-md space-y-6 relative">
         <div className="flex justify-center">
           <Logo to="/" />
         </div>
 
-        <Card className="p-6 space-y-5">
+        <Card className="p-6 sm:p-7 space-y-5 shadow-2xl">
           <div className="space-y-1">
-            <h1 className="text-xl font-semibold text-[#F4F4F5]">
+            <h1 className="text-xl font-bold text-[#F4F4F7] font-display">
               Create your account
             </h1>
-            <p className="text-xs text-[#A1A1AA]">
+            <p className="text-xs text-[#A1A1B0]">
               Start collaborating on lectures, interviews, and podcasts.
             </p>
           </div>

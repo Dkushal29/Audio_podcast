@@ -49,11 +49,11 @@ export function MembersPage() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <Badge tone={mode === 'study' ? 'cyan' : 'primary'}>{cfg.name}</Badge>
-          <h1 className="text-2xl font-semibold text-[#F4F4F5] mt-2">
+          <Badge tone={cfg.badgeTone}>{cfg.name}</Badge>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#F4F4F7] font-display mt-2">
             Workspace Members
           </h1>
-          <p className="text-sm text-[#A1A1AA] mt-0.5">
+          <p className="text-sm text-[#A1A1B0] mt-0.5">
             Collaborators with access to recordings, annotations, and clips.
           </p>
         </div>
@@ -67,7 +67,7 @@ export function MembersPage() {
         </Button>
       </div>
 
-      <Card className="divide-y divide-[#27272F]">
+      <Card className="divide-y divide-[#22222B]">
         {members.map((m) => (
           <div
             key={m.id}
@@ -76,8 +76,8 @@ export function MembersPage() {
             <div className="flex items-center gap-3">
               <Avatar name={m.name} color={m.avatarColor} size="md" />
               <div>
-                <p className="text-sm font-medium text-[#F4F4F5]">{m.name}</p>
-                <p className="text-xs text-[#A1A1AA]">{m.email}</p>
+                <p className="text-sm font-medium text-[#F4F4F7]">{m.name}</p>
+                <p className="text-xs text-[#A1A1B0]">{m.email}</p>
               </div>
             </div>
 
@@ -88,7 +88,7 @@ export function MembersPage() {
           </div>
         ))}
         {members.length === 0 && (
-          <div className="p-6 text-center text-xs text-[#A1A1AA]">
+          <div className="p-8 text-center text-xs text-[#A1A1B0]">
             No members found in this workspace yet.
           </div>
         )}

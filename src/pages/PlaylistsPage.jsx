@@ -85,14 +85,14 @@ export function PlaylistsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <Badge tone={mode === 'study' ? 'cyan' : 'primary'}>{cfg.name}</Badge>
-          <h1 className="text-2xl font-semibold text-[#F4F4F5] mt-2">
+          <Badge tone={cfg.badgeTone}>{cfg.name}</Badge>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#F4F4F7] font-display mt-2">
             {cfg.collectionPlural}
           </h1>
-          <p className="text-sm text-[#A1A1AA] mt-0.5">
+          <p className="text-sm text-[#A1A1B0] mt-0.5">
             {mode === 'study'
               ? 'Organize lectures into structured subject playlists for revision.'
               : 'Manage podcast shows, episode ordering, and RSS syndication feeds.'}

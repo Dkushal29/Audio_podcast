@@ -14,7 +14,13 @@ export function PlaylistCard({ playlist, recordingCount, onSelect }) {
     >
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="w-8 h-8 rounded-lg bg-[#18181D] border border-[#27272F] flex items-center justify-center text-[#A1A1AA]">
+          <div
+            className={`w-8 h-8 rounded-lg border flex items-center justify-center ${
+              isCreator
+                ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]/30 text-[#A78BFA]'
+                : 'bg-[#22D3EE]/10 border-[#22D3EE]/30 text-[#22D3EE]'
+            }`}
+          >
             <ListMusic className="w-4 h-4" />
           </div>
           <Badge tone={isCreator ? 'primary' : 'cyan'}>
@@ -23,15 +29,15 @@ export function PlaylistCard({ playlist, recordingCount, onSelect }) {
           </Badge>
         </div>
 
-        <h4 className="text-sm font-semibold text-[#F4F4F5] line-clamp-1">
+        <h4 className="text-sm font-semibold text-[#F4F4F7] font-display line-clamp-1">
           {playlist.title}
         </h4>
-        <p className="text-xs text-[#A1A1AA] line-clamp-2 leading-relaxed">
+        <p className="text-xs text-[#A1A1B0] line-clamp-2 leading-relaxed">
           {playlist.description}
         </p>
       </div>
 
-      <div className="pt-2.5 border-t border-[#27272F] flex items-center justify-between text-[11px] text-[#71717A]">
+      <div className="pt-2.5 border-t border-[#22222B] flex items-center justify-between text-[11px] text-[#6E6E7E]">
         <span className="truncate">
           {isCreator && playlist.rssUrl ? (
             <span className="inline-flex items-center gap-1 text-[#A78BFA]">

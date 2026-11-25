@@ -36,12 +36,12 @@ export function AnnotationCard({
   return (
     <div
       onClick={handleCardClick}
-      className={`rounded-lg border p-3.5 transition-colors ${
+      className={`rounded-xl border p-4 transition-all ${
         onSeek ? 'cursor-pointer' : ''
       } ${
         isActive
-          ? 'bg-[#18181D] border-[#8B5CF6]/50'
-          : 'bg-[#111114] border-[#27272F] hover:border-[#3F3F46]'
+          ? 'bg-[#16161D] border-[#8B5CF6]/55 shadow-sm'
+          : 'bg-[#101015] border-[#22222B] hover:border-[#343442]'
       }`}
     >
       {/* Header */}

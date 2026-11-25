@@ -326,21 +326,21 @@ export function AudioWorkspacePage() {
         <div className="flex items-center gap-3">
           <Link
             to="/app/recordings"
-            className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA] hover:text-[#F4F4F5] transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1B0] hover:text-[#F4F4F7] transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             All {cfg.recordingPlural}
           </Link>
-          <span className="text-[#27272F]">/</span>
-          <Badge tone={mode === 'study' ? 'cyan' : 'primary'}>
+          <span className="text-[#343442]">/</span>
+          <Badge tone={cfg.badgeTone}>
             {cfg.name}
           </Badge>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-[#A1A1AA]">
+        <div className="flex items-center gap-3 text-xs text-[#A1A1B0]">
           <span>By {recording.authorName}</span>
           <span>·</span>
-          <span className="inline-flex items-center gap-1 font-mono">
+          <span className="inline-flex items-center gap-1 font-mono-time text-[#F4F4F7] bg-[#101015] border border-[#22222B] px-2 py-0.5 rounded">
             <Clock className="w-3.5 h-3.5 text-[#22D3EE]" />
             {formatTime(duration || recording.duration)}
           </span>

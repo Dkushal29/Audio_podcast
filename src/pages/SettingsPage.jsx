@@ -49,8 +49,8 @@ export function SettingsPage() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-[#F4F4F5]">Settings</h1>
-          <p className="text-sm text-[#A1A1AA] mt-0.5">
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#F4F4F7] font-display">Settings</h1>
+          <p className="text-sm text-[#A1A1B0] mt-0.5">
             Manage your profile, workspace labels, members, and playback
             preferences.
           </p>

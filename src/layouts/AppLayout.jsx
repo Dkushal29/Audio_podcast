@@ -40,7 +40,7 @@ export function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen h-screen flex bg-[#09090B] text-[#F4F4F5] overflow-hidden">
+    <div className="min-h-screen h-screen flex bg-[#070709] text-[#F4F4F7] overflow-hidden">
       <Sidebar
         mobileOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
