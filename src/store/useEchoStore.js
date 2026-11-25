@@ -1,15 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import {
-  INITIAL_ACTIVITY,
-  INITIAL_ANNOTATIONS,
-  INITIAL_CLIPS,
-  INITIAL_MEMBERS,
-  INITIAL_PLAYLISTS,
-  INITIAL_RECORDINGS,
-  INITIAL_USER,
-  SAMPLE_AUDIO_URL,
-} from '../data/mockData'
 import { apiClient, setAuthToken } from '../services/api'
 import { connectSocket, disconnectSocket } from '../services/socket'
 
@@ -23,15 +13,20 @@ function formatRelativeTime(dateInput) {
 }
 
 function normalizeEpisode(ep, mode) {
+  const sourceType = ep.sourceType || 'UPLOAD'
   return {
     id: ep.id,
     workspaceId: ep.workspaceId,
     mode: (ep.workspace?.mode || mode || 'study').toLowerCase(),
     title: ep.title,
     description: ep.description || '',
-    audioUrl: apiClient.getEpisodeAudioUrl(ep.id),
+    sourceType,
+    sourceUrl: ep.sourceUrl || null,
+    audioUrl:
+      sourceType === 'UPLOAD' ? apiClient.getEpisodeAudioUrl(ep.id) : null,
     duration: ep.duration || 0,
     createdAt: formatRelativeTime(ep.createdAt),
+    createdAtRaw: ep.createdAt,
     authorId: ep.uploaderId,
     authorName: ep.uploader?.name || 'Member',
     tags: ep.tags || [],
@@ -50,9 +45,11 @@ function normalizeAnnotation(ann, mode) {
     authorId: ann.userId,
     authorName: ann.user?.name || 'Member',
     createdAt: formatRelativeTime(ann.createdAt),
+    createdAtRaw: ann.createdAt,
     content: ann.content,
     replies: (ann.replies || []).map((r) => ({
       id: r.id,
+      authorId: r.userId,
       authorName: r.user?.name || 'Member',
       createdAt: formatRelativeTime(r.createdAt),
       content: r.content,
@@ -70,46 +67,87 @@ function normalizeClip(clip, mode, recordingTitle = '') {
     title: clip.title,
     startTime: clip.startTime,
     endTime: clip.endTime,
+    authorId: clip.creatorId,
     authorName: clip.creator?.name || 'Member',
     createdAt: formatRelativeTime(clip.createdAt),
-    views: clip.views ?? 1,
+    createdAtRaw: clip.createdAt,
+    views: clip.views ?? 0,
     notes: clip.description || '',
   }
+}
+
+function buildWorkspaceActivity(episodes, annotations, clips, modeLower) {
+  const items = []
+  episodes.forEach((ep) => {
+    items.push({
+      id: `act-ep-${ep.id}`,
+      mode: modeLower,
+      actor: ep.authorName,
+      action:
+        ep.sourceType === 'EXTERNAL_LINK'
+          ? 'linked media'
+          : modeLower === 'study'
+            ? 'uploaded lecture'
+            : 'uploaded episode',
+      target: ep.title,
+      time: ep.createdAt,
+      ts: new Date(ep.createdAtRaw || 0).getTime(),
+    })
+  })
+  annotations.forEach((ann) => {
+    items.push({
+      id: `act-ann-${ann.id}`,
+      mode: modeLower,
+      actor: ann.authorName,
+      action: `added ${ann.category.toLowerCase()}`,
+      target: ann.content.slice(0, 48),
+      time: ann.createdAt,
+      ts: new Date(ann.createdAtRaw || 0).getTime(),
+    })
+  })
+  clips.forEach((c) => {
+    items.push({
+      id: `act-clip-${c.id}`,
+      mode: modeLower,
+      actor: c.authorName,
+      action: 'created clip',
+      target: c.title,
+      time: c.createdAt,
+      ts: new Date(c.createdAtRaw || 0).getTime(),
+    })
+  })
+  return items.sort((a, b) => b.ts - a.ts).slice(0, 10)
 }
 
 export const useEchoStore = create(
   persist(
     (set, get) => ({
-      // Auth state
       token: null,
-      user: INITIAL_USER,
+      user: null,
       isAuthenticated: false,
 
-      // Active workspace & mode
       mode: 'study',
       workspaces: [],
       activeWorkspaceId: null,
       activeWorkspaceRole: 'OWNER',
       shows: [],
 
-      // Domain entities (populated from API when authenticated, or demo fallback)
-      recordings: INITIAL_RECORDINGS,
-      annotations: INITIAL_ANNOTATIONS,
-      clips: INITIAL_CLIPS,
-      playlists: INITIAL_PLAYLISTS,
-      members: INITIAL_MEMBERS,
-      activity: INITIAL_ACTIVITY,
+      recordings: [],
+      annotations: [],
+      clips: [],
+      playlists: [],
+      members: [],
+      activity: [],
 
       workspaceSettings: {
-        studyName: 'CS & AI Study Collective',
-        creatorName: 'EchoSpace Audio Studio',
+        studyName: 'Study Workspace',
+        creatorName: 'Creator Workspace',
         defaultPlaybackSpeed: 1,
         autoPauseOnAnnotate: true,
         emailNotifications: true,
-        chromeExtensionSync: false,
+        chromeExtensionSync: true,
       },
 
-      // Auth actions
       registerWithBackend: async ({ name, email, password }) => {
         const { user, token } = await apiClient.register({
           name,
@@ -132,29 +170,27 @@ export const useEchoStore = create(
         return user
       },
 
-      loginDemo: (email, name) =>
-        set((state) => ({
-          isAuthenticated: true,
-          token: null,
-          user: {
-            ...state.user,
-            email: email || state.user.email,
-            name: name || state.user.name,
-          },
-        })),
-
-      logoutDemo: () => {
+      logout: () => {
         setAuthToken(null)
         disconnectSocket()
         set({
           token: null,
+          user: null,
           isAuthenticated: false,
           workspaces: [],
           activeWorkspaceId: null,
+          shows: [],
+          recordings: [],
+          annotations: [],
+          clips: [],
+          playlists: [],
+          members: [],
+          activity: [],
         })
       },
 
-      // Workspaces
+      logoutDemo: () => get().logout(),
+
       loadWorkspaces: async () => {
         const { token } = get()
         if (!token) return []
@@ -166,6 +202,16 @@ export const useEchoStore = create(
           workspaces.find((w) => w.id === currentId) || workspaces[0]
         if (target) {
           await get().selectWorkspace(target.id)
+        } else {
+          set({
+            activeWorkspaceId: null,
+            recordings: [],
+            annotations: [],
+            clips: [],
+            playlists: [],
+            members: [],
+            activity: [],
+          })
         }
         return workspaces
       },
@@ -187,6 +233,12 @@ export const useEchoStore = create(
         const mappedRecordings = (ws.episodes || []).map((ep) =>
           normalizeEpisode(ep, modeLower)
         )
+        const mappedAnnotations = (ws.episodes || []).flatMap((ep) =>
+          (ep.annotations || []).map((a) => normalizeAnnotation(a, modeLower))
+        )
+        const mappedClips = (ws.episodes || []).flatMap((ep) =>
+          (ep.clips || []).map((c) => normalizeClip(c, modeLower, ep.title))
+        )
         const mappedPlaylists = (ws.playlists || []).map((pl) => ({
           id: pl.id,
           mode: modeLower,
@@ -206,16 +258,24 @@ export const useEchoStore = create(
           avatarColor: m.user.avatarColor || '#8B5CF6',
         }))
 
+        const activity = buildWorkspaceActivity(
+          mappedRecordings,
+          mappedAnnotations,
+          mappedClips,
+          modeLower
+        )
+
         set((state) => ({
           activeWorkspaceId: ws.id,
           activeWorkspaceRole: ws.myRole || 'MEMBER',
           mode: modeLower,
           shows: ws.shows || [],
           recordings: mappedRecordings,
+          annotations: mappedAnnotations,
+          clips: mappedClips,
           playlists: mappedPlaylists,
           members: mappedMembers,
-          annotations: [],
-          clips: [],
+          activity,
           workspaceSettings: {
             ...state.workspaceSettings,
             ...(modeLower === 'study'
@@ -240,7 +300,6 @@ export const useEchoStore = create(
         }
       },
 
-      // Episode detail & upload
       loadEpisodeDetail: async (episodeId) => {
         const { token } = get()
         if (!token || !episodeId) return null
@@ -280,114 +339,88 @@ export const useEchoStore = create(
         duration = 0,
         onProgress,
       }) => {
-        const { token, activeWorkspaceId, mode, shows } = get()
-        if (token && activeWorkspaceId && file) {
-          const fd = new FormData()
-          fd.append('audio', file)
-          fd.append('workspaceId', activeWorkspaceId)
-          fd.append('title', title)
-          fd.append('description', description || '')
-          fd.append('tags', Array.isArray(tags) ? tags.join(',') : tags)
-          fd.append('duration', String(duration || 0))
-          if (playlistId) fd.append('playlistId', playlistId)
-          if (mode === 'creator' && shows[0]?.id) {
-            fd.append('showId', shows[0].id)
-          }
-
-          const ep = await apiClient.uploadEpisode(fd, onProgress)
-          const norm = normalizeEpisode(ep, mode)
-          set((state) => ({
-            recordings: [norm, ...state.recordings],
-          }))
-          return norm
+        const { activeWorkspaceId, mode, shows } = get()
+        if (!activeWorkspaceId) {
+          throw new Error('No active workspace selected.')
+        }
+        const fd = new FormData()
+        fd.append('audio', file)
+        fd.append('workspaceId', activeWorkspaceId)
+        fd.append('title', title)
+        fd.append('description', description || '')
+        fd.append('tags', Array.isArray(tags) ? tags.join(',') : tags)
+        fd.append('duration', String(duration || 0))
+        if (playlistId) fd.append('playlistId', playlistId)
+        if (mode === 'creator' && shows[0]?.id) {
+          fd.append('showId', shows[0].id)
         }
 
-        // Demo fallback when unauthenticated
-        return get().addRecording({
+        const ep = await apiClient.uploadEpisode(fd, onProgress)
+        const norm = normalizeEpisode(ep, mode)
+        set((state) => ({
+          recordings: [norm, ...state.recordings],
+        }))
+        return norm
+      },
+
+      createExternalEpisode: async ({
+        sourceUrl,
+        title,
+        description = '',
+        tags = [],
+        playlistId = '',
+        duration = 0,
+      }) => {
+        const { activeWorkspaceId, mode, shows } = get()
+        if (!activeWorkspaceId) {
+          throw new Error('No active workspace selected.')
+        }
+        const parsedTags = Array.isArray(tags)
+          ? tags
+          : String(tags)
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+
+        const ep = await apiClient.createExternalEpisode({
+          workspaceId: activeWorkspaceId,
           title,
           description,
-          tags: Array.isArray(tags)
-            ? tags
-            : tags
-                .split(',')
-                .map((t) => t.trim())
-                .filter(Boolean),
-          playlistId,
+          sourceUrl,
+          duration,
+          tags: parsedTags,
+          playlistId: playlistId || undefined,
+          showId: mode === 'creator' && shows[0]?.id ? shows[0].id : undefined,
         })
-      },
-
-      addRecording: ({ title, description, tags = [], playlistId = '' }) => {
-        const { mode, user } = get()
-        const id = `rec-${mode}-${Date.now()}`
-        const newRec = {
-          id,
-          mode,
-          title,
-          description:
-            description || 'Uploaded via EchoSpace workspace demo uploader.',
-          audioUrl: SAMPLE_AUDIO_URL,
-          duration: 42,
-          createdAt: 'Just now',
-          authorId: user.id,
-          authorName: user.name,
-          playlistId,
-          tags,
-          chapters: [
-            { id: `ch-${Date.now()}-1`, title: 'Introduction', startTime: 0 },
-            { id: `ch-${Date.now()}-2`, title: 'Core Discussion', startTime: 18 },
-          ],
-        }
+        const norm = normalizeEpisode(ep, mode)
         set((state) => ({
-          recordings: [newRec, ...state.recordings],
+          recordings: state.recordings.some((r) => r.id === norm.id)
+            ? state.recordings
+            : [norm, ...state.recordings],
         }))
-        return newRec
+        return norm
       },
 
-      // Annotations
       addAnnotation: async ({ recordingId, timestamp, category, content }) => {
-        const { token, mode, user, recordings } = get()
+        const { mode, recordings } = get()
         const rec = recordings.find((r) => r.id === recordingId)
-
-        if (token) {
-          const created = await apiClient.createAnnotation(recordingId, {
-            timestamp,
-            category,
-            content,
-          })
-          const norm = normalizeAnnotation(created, rec?.mode || mode)
-          set((state) => ({
-            annotations: state.annotations.some((a) => a.id === norm.id)
-              ? state.annotations
-              : [norm, ...state.annotations],
-          }))
-          return norm
-        }
-
-        const ann = {
-          id: `ann-${Date.now()}`,
-          recordingId,
-          mode: rec?.mode || mode,
+        const created = await apiClient.createAnnotation(recordingId, {
           timestamp,
           category,
-          status: 'OPEN',
-          authorId: user.id,
-          authorName: user.name,
-          createdAt: 'Just now',
           content,
-          replies: [],
-        }
+        })
+        const norm = normalizeAnnotation(created, rec?.mode || mode)
         set((state) => ({
-          annotations: [ann, ...state.annotations],
+          annotations: state.annotations.some((a) => a.id === norm.id)
+            ? state.annotations
+            : [norm, ...state.annotations],
         }))
-        return ann
+        return norm
       },
 
       updateAnnotationStatus: async (annotationId, status) => {
-        const { token } = get()
         const upper = String(status).toUpperCase()
-        if (token) {
-          await apiClient.updateAnnotation(annotationId, { status: upper })
-        }
+        await apiClient.updateAnnotation(annotationId, { status: upper })
         set((state) => ({
           annotations: state.annotations.map((ann) =>
             ann.id === annotationId ? { ...ann, status: upper } : ann
@@ -395,115 +428,105 @@ export const useEchoStore = create(
         }))
       },
 
-      addReply: async (annotationId, content) => {
-        const { token, user } = get()
-        if (token) {
-          const created = await apiClient.createReply(annotationId, content)
-          const normReply = {
-            id: created.id,
-            authorName: created.user?.name || user.name,
-            createdAt: 'Just now',
-            content: created.content,
-          }
-          set((state) => ({
-            annotations: state.annotations.map((ann) =>
-              ann.id === annotationId &&
-              !ann.replies.some((r) => r.id === normReply.id)
-                ? { ...ann, replies: [...ann.replies, normReply] }
-                : ann
-            ),
-          }))
-          return normReply
-        }
+      editAnnotation: async (annotationId, content) => {
+        await apiClient.updateAnnotation(annotationId, { content })
+        set((state) => ({
+          annotations: state.annotations.map((ann) =>
+            ann.id === annotationId ? { ...ann, content } : ann
+          ),
+        }))
+      },
 
-        const reply = {
-          id: `rep-${Date.now()}`,
-          authorName: user.name,
+      deleteAnnotation: async (annotationId) => {
+        await apiClient.deleteAnnotation(annotationId)
+        set((state) => ({
+          annotations: state.annotations.filter((a) => a.id !== annotationId),
+        }))
+      },
+
+      addReply: async (annotationId, content) => {
+        const { user } = get()
+        const created = await apiClient.createReply(annotationId, content)
+        const normReply = {
+          id: created.id,
+          authorId: created.userId || user?.id,
+          authorName: created.user?.name || user?.name || 'Member',
           createdAt: 'Just now',
-          content,
+          content: created.content,
         }
         set((state) => ({
           annotations: state.annotations.map((ann) =>
-            ann.id === annotationId
-              ? { ...ann, replies: [...ann.replies, reply] }
+            ann.id === annotationId &&
+            !ann.replies.some((r) => r.id === normReply.id)
+              ? { ...ann, replies: [...ann.replies, normReply] }
               : ann
           ),
         }))
-        return reply
+        return normReply
       },
 
-      // Clips
+      deleteReply: async (annotationId, replyId) => {
+        await apiClient.deleteReply(replyId)
+        set((state) => ({
+          annotations: state.annotations.map((ann) =>
+            ann.id === annotationId
+              ? {
+                  ...ann,
+                  replies: ann.replies.filter((r) => r.id !== replyId),
+                }
+              : ann
+          ),
+        }))
+      },
+
       addClip: async ({ recordingId, title, startTime, endTime, notes }) => {
-        const { token, mode, user, recordings } = get()
+        const { mode, recordings } = get()
         const rec = recordings.find((r) => r.id === recordingId)
-
-        if (token) {
-          const created = await apiClient.createClip(recordingId, {
-            title,
-            description: notes || '',
-            startTime,
-            endTime,
-            visibility: 'PUBLIC',
-          })
-          const norm = normalizeClip(created, rec?.mode || mode, rec?.title)
-          set((state) => ({
-            clips: state.clips.some((c) => c.id === norm.id)
-              ? state.clips
-              : [norm, ...state.clips],
-          }))
-          return norm
-        }
-
-        const clip = {
-          id: `clip-${Date.now()}`,
-          shareToken: `clip-${Date.now()}`,
-          mode: rec?.mode || mode,
-          recordingId,
-          recordingTitle: rec?.title || 'Untitled Recording',
+        const created = await apiClient.createClip(recordingId, {
           title,
+          description: notes || '',
           startTime,
           endTime,
-          authorName: user.name,
-          createdAt: 'Just now',
-          views: 1,
-          notes: notes || '',
-        }
+          visibility: 'PUBLIC',
+        })
+        const norm = normalizeClip(created, rec?.mode || mode, rec?.title)
         set((state) => ({
-          clips: [clip, ...state.clips],
+          clips: state.clips.some((c) => c.id === norm.id)
+            ? state.clips
+            : [norm, ...state.clips],
         }))
-        return clip
+        return norm
       },
 
-      // Chapters
+      deleteClip: async (clipId) => {
+        await apiClient.deleteClip(clipId)
+        set((state) => ({
+          clips: state.clips.filter((c) => c.id !== clipId),
+        }))
+      },
+
       addChapter: async ({ episodeId, title, startTime }) => {
-        const { token } = get()
-        if (token) {
-          const chapter = await apiClient.createChapter(episodeId, {
-            title,
-            startTime,
-          })
-          set((state) => ({
-            recordings: state.recordings.map((r) =>
-              r.id === episodeId
-                ? {
-                    ...r,
-                    chapters: [...(r.chapters || []), chapter].sort(
-                      (a, b) => a.startTime - b.startTime
-                    ),
-                  }
-                : r
-            ),
-          }))
-          return chapter
-        }
-        return null
+        const chapter = await apiClient.createChapter(episodeId, {
+          title,
+          startTime,
+        })
+        set((state) => ({
+          recordings: state.recordings.map((r) =>
+            r.id === episodeId
+              ? {
+                  ...r,
+                  chapters: [...(r.chapters || []), chapter].sort(
+                    (a, b) => a.startTime - b.startTime
+                  ),
+                }
+              : r
+          ),
+        }))
+        return chapter
       },
 
       deleteChapter: async (episodeId, chapterId) => {
-        const { token } = get()
-        if (token) {
-          await apiClient.deleteChapter(chapterId)
-        }
+        await apiClient.deleteChapter(chapterId)
         set((state) => ({
           recordings: state.recordings.map((r) =>
             r.id === episodeId
@@ -516,56 +539,39 @@ export const useEchoStore = create(
         }))
       },
 
-      // Playlists
       addPlaylist: async ({
         title,
         description,
         rssUrl = '',
         recordingIds = [],
       }) => {
-        const { token, activeWorkspaceId, mode } = get()
-        if (token && activeWorkspaceId) {
-          const pl = await apiClient.createPlaylist(activeWorkspaceId, {
-            title,
-            description,
-            rssUrl: rssUrl || null,
-            episodeIds: recordingIds,
-          })
-          const norm = {
-            id: pl.id,
-            mode,
-            title: pl.title,
-            description: pl.description || '',
-            rssUrl: pl.rssUrl || '',
-            recordingIds: (pl.episodes || []).map((pe) => pe.episodeId),
-            updatedAt: 'Just now',
-          }
-          set((state) => ({
-            playlists: [norm, ...state.playlists],
-          }))
-          return norm
+        const { activeWorkspaceId, mode } = get()
+        if (!activeWorkspaceId) {
+          throw new Error('No active workspace selected.')
         }
-
-        const playlist = {
-          id: `pl-${mode}-${Date.now()}`,
-          mode,
+        const pl = await apiClient.createPlaylist(activeWorkspaceId, {
           title,
           description,
-          rssUrl,
-          recordingIds,
+          rssUrl: rssUrl || null,
+          episodeIds: recordingIds,
+        })
+        const norm = {
+          id: pl.id,
+          mode,
+          title: pl.title,
+          description: pl.description || '',
+          rssUrl: pl.rssUrl || '',
+          recordingIds: (pl.episodes || []).map((pe) => pe.episodeId),
           updatedAt: 'Just now',
         }
         set((state) => ({
-          playlists: [playlist, ...state.playlists],
+          playlists: [norm, ...state.playlists],
         }))
-        return playlist
+        return norm
       },
 
       reorderPlaylistRecordings: async (playlistId, recordingIds) => {
-        const { token } = get()
-        if (token) {
-          await apiClient.reorderPlaylist(playlistId, recordingIds)
-        }
+        await apiClient.reorderPlaylist(playlistId, recordingIds)
         set((state) => ({
           playlists: state.playlists.map((pl) =>
             pl.id === playlistId
@@ -575,61 +581,47 @@ export const useEchoStore = create(
         }))
       },
 
-      // Members
-      inviteMember: async ({ name, email, role }) => {
-        const { token, activeWorkspaceId, mode } = get()
-        if (token && activeWorkspaceId) {
-          const member = await apiClient.addWorkspaceMember(activeWorkspaceId, {
-            email,
-            role: role.toUpperCase(),
-          })
-          const norm = {
-            id: member.user.id,
-            name: member.user.name,
-            email: member.user.email,
-            role: member.role,
-            modes: [mode],
-            status: 'Active',
-            avatarColor: member.user.avatarColor || '#22D3EE',
-          }
-          set((state) => ({
-            members: state.members.some((m) => m.id === norm.id)
-              ? state.members.map((m) => (m.id === norm.id ? norm : m))
-              : [...state.members, norm],
-          }))
-          return norm
-        }
+      deletePlaylist: async (playlistId) => {
+        await apiClient.deletePlaylist(playlistId)
+        set((state) => ({
+          playlists: state.playlists.filter((pl) => pl.id !== playlistId),
+        }))
+      },
 
-        const member = {
-          id: `u-${Date.now()}`,
-          name,
+      inviteMember: async ({ email, role }) => {
+        const { activeWorkspaceId, mode } = get()
+        if (!activeWorkspaceId) {
+          throw new Error('No active workspace selected.')
+        }
+        const member = await apiClient.addWorkspaceMember(activeWorkspaceId, {
           email,
-          role,
+          role: role.toUpperCase(),
+        })
+        const norm = {
+          id: member.user.id,
+          name: member.user.name,
+          email: member.user.email,
+          role: member.role,
           modes: [mode],
-          status: 'Invited',
-          avatarColor: '#22D3EE',
+          status: 'Active',
+          avatarColor: member.user.avatarColor || '#22D3EE',
         }
         set((state) => ({
-          members: [...state.members, member],
+          members: state.members.some((m) => m.id === norm.id)
+            ? state.members.map((m) => (m.id === norm.id ? norm : m))
+            : [...state.members, norm],
         }))
-        return member
+        return norm
       },
 
       updateProfile: async (updates) => {
-        const { token } = get()
-        if (token) {
-          const { user } = await apiClient.updateProfile(updates)
-          set({ user })
-          return
-        }
-        set((state) => ({
-          user: { ...state.user, ...updates },
-        }))
+        const { user } = await apiClient.updateProfile(updates)
+        set({ user })
       },
 
       updateWorkspaceSettings: async (updates) => {
-        const { token, activeWorkspaceId, mode } = get()
-        if (token && activeWorkspaceId) {
+        const { activeWorkspaceId, mode } = get()
+        if (activeWorkspaceId) {
           const nextName =
             mode === 'study' ? updates.studyName : updates.creatorName
           if (nextName) {
@@ -641,7 +633,6 @@ export const useEchoStore = create(
         }))
       },
 
-      // Socket.IO real-time mutators
       applySocketAnnotationCreated: (ann) => {
         const mode = get().mode
         const norm = normalizeAnnotation(ann, mode)
@@ -695,18 +686,27 @@ export const useEchoStore = create(
         }))
       },
 
-      resetDemoData: () =>
-        set({
-          recordings: INITIAL_RECORDINGS,
-          annotations: INITIAL_ANNOTATIONS,
-          clips: INITIAL_CLIPS,
-          playlists: INITIAL_PLAYLISTS,
-          members: INITIAL_MEMBERS,
-          activity: INITIAL_ACTIVITY,
-        }),
+      applySocketReplyDeleted: ({ annotationId, replyId }) => {
+        set((state) => ({
+          annotations: state.annotations.map((ann) =>
+            ann.id === annotationId
+              ? {
+                  ...ann,
+                  replies: ann.replies.filter((r) => r.id !== replyId),
+                }
+              : ann
+          ),
+        }))
+      },
+
+      applySocketClipDeleted: (clipId) => {
+        set((state) => ({
+          clips: state.clips.filter((c) => c.id !== clipId),
+        }))
+      },
     }),
     {
-      name: 'echospace-demo-store-v1',
+      name: 'echospace-store-v2',
       onRehydrateStorage: () => (state) => {
         if (state?.token) {
           setAuthToken(state.token)

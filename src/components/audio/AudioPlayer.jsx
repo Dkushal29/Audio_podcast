@@ -20,12 +20,16 @@ export function AudioPlayer({
   recording,
   mode,
   annotations = [],
+  clips = [],
   activeAnnotationId = null,
   clipRange = null,
   seekToTime = null,
   defaultSpeed = 1,
   onTimeUpdate,
+  onDurationChange,
   onSelectAnnotation,
+  onSelectClip,
+  onClearClipRange,
   onCreateAnnotation,
   onCreateClip,
 }) {
@@ -36,6 +40,15 @@ export function AudioPlayer({
   const [speed, setSpeed] = useState(defaultSpeed)
   const [isLooping, setIsLooping] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
+
+  useEffect(() => {
+    const initialDur = recording?.duration || 0
+    setDuration(initialDur)
+    setCurrentTime(0)
+    onDurationChange?.(initialDur)
+  }, [recording?.id])
+
+  if (!recording) return null
 
   // External seek requests (e.g. clicking an annotation timestamp or chapter)
   useEffect(() => {
@@ -78,8 +91,13 @@ export function AudioPlayer({
   const handleTimeUpdate = (t) => {
     setCurrentTime(t)
     onTimeUpdate?.(t)
-    if (clipRange && isLooping && t >= clipRange.endTime) {
-      wsRef.current?.setTime(clipRange.startTime)
+    if (clipRange && t >= clipRange.endTime) {
+      if (isLooping) {
+        wsRef.current?.setTime(clipRange.startTime)
+      } else {
+        wsRef.current?.pause()
+        wsRef.current?.setTime(clipRange.endTime)
+      }
     }
   }
 
@@ -108,11 +126,13 @@ export function AudioPlayer({
         audioUrl={recording.audioUrl}
         mode={mode}
         annotations={annotations}
+        clips={clips}
         activeAnnotationId={activeAnnotationId}
         clipRange={clipRange}
         waveSurferRef={wsRef}
         onReady={(dur, ws) => {
           setDuration(dur)
+          onDurationChange?.(dur)
           ws.setPlaybackRate(speed)
         }}
         onTimeUpdate={handleTimeUpdate}
@@ -123,7 +143,30 @@ export function AudioPlayer({
           setCurrentTime(ann.timestamp)
           onSelectAnnotation?.(ann)
         }}
+        onSelectClip={(clip) => {
+          wsRef.current?.setTime(clip.startTime)
+          setCurrentTime(clip.startTime)
+          wsRef.current?.play()
+          onSelectClip?.(clip)
+        }}
       />
+
+      {clipRange && (
+        <div className="flex items-center justify-between px-3 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-300">
+          <span>
+            Playing interval: <strong className="font-mono">{formatTime(clipRange.startTime)} – {formatTime(clipRange.endTime)}</strong>
+          </span>
+          {onClearClipRange && (
+            <button
+              type="button"
+              onClick={onClearClipRange}
+              className="text-[11px] text-[#A1A1AA] hover:text-[#F4F4F5] cursor-pointer"
+            >
+              Exit interval
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Transport & Action Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">

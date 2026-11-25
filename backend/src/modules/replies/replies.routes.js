@@ -4,6 +4,7 @@ import { validate } from '../../middleware/validate.js'
 import {
   createReply,
   createReplySchema,
+  deleteReply,
   listReplies,
 } from './replies.controller.js'
 
@@ -16,5 +17,6 @@ router.post(
   validate(createReplySchema),
   createReply
 )
+router.delete('/replies/:id', requireAuth, deleteReply)
 
 export default router

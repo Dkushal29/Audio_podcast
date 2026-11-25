@@ -4,6 +4,7 @@ import { AppError, asyncHandler } from '../../utils/errors.js'
 import {
   ALL_ROLES,
   assertEpisodeMember,
+  MANAGE_ROLES,
   WRITE_ROLES,
 } from '../../middleware/workspaceAuth.js'
 import { emitEpisodeEvent } from '../../sockets/index.js'
@@ -60,4 +61,35 @@ export const createReply = asyncHandler(async (req, res) => {
   })
 
   res.status(201).json({ reply })
+})
+
+export const deleteReply = asyncHandler(async (req, res) => {
+  const reply = await prisma.annotationReply.findUnique({
+    where: { id: req.params.id },
+    include: { annotation: true },
+  })
+  if (!reply) {
+    throw new AppError(404, 'Reply not found.', 'NOT_FOUND')
+  }
+
+  const { membership } = await assertEpisodeMember(
+    reply.annotation.episodeId,
+    req.user.id,
+    ALL_ROLES
+  )
+
+  const canDelete =
+    MANAGE_ROLES.includes(membership.role) || reply.userId === req.user.id
+  if (!canDelete) {
+    throw new AppError(403, 'You can only delete your own replies.', 'FORBIDDEN')
+  }
+
+  await prisma.annotationReply.delete({ where: { id: reply.id } })
+
+  emitEpisodeEvent(reply.annotation.episodeId, 'reply:deleted', {
+    annotationId: reply.annotationId,
+    replyId: reply.id,
+  })
+
+  res.status(204).end()
 })

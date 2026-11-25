@@ -10,7 +10,6 @@ import { useEchoStore } from '../store/useEchoStore'
 export function LoginPage() {
   const navigate = useNavigate()
   const loginWithBackend = useEchoStore((s) => s.loginWithBackend)
-  const loginDemo = useEchoStore((s) => s.loginDemo)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState({})
@@ -104,24 +103,13 @@ export function LoginPage() {
               {loading ? 'Signing in...' : 'Sign In'}
               <ArrowRight className="w-4 h-4" />
             </Button>
-
-            <button
-              type="button"
-              onClick={() => {
-                loginDemo(email.trim() || 'aarav@echospace.app')
-                navigate('/workspaces')
-              }}
-              className="w-full text-center text-xs text-[#71717A] hover:text-[#A1A1AA] pt-1 cursor-pointer"
-            >
-              Or explore with offline demo data
-            </button>
           </form>
         </Card>
 
         <p className="text-center text-xs text-[#A1A1AA]">
           New to EchoSpace?{' '}
           <Link to="/register" className="text-[#F4F4F5] hover:underline font-medium">
-            Create a demo account
+            Create an account
           </Link>
         </p>
       </div>

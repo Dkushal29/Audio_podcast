@@ -9,7 +9,14 @@ let ioInstance = null
 export function initSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: {
-      origin: env.corsOrigin,
+      origin(origin, callback) {
+        if (!origin) return callback(null, true)
+        if (env.corsOrigins.includes(origin)) return callback(null, true)
+        if (env.allowExtensionCors && origin.startsWith('chrome-extension://')) {
+          return callback(null, true)
+        }
+        return callback(new Error('Origin not allowed by Socket.IO CORS'))
+      },
       methods: ['GET', 'POST', 'PATCH', 'DELETE'],
       credentials: true,
     },

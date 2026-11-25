@@ -82,6 +82,25 @@ export async function getWorkspaceDetail(workspaceId, userId) {
         include: {
           uploader: { select: { id: true, name: true, avatarColor: true } },
           chapters: { orderBy: { startTime: 'asc' } },
+          annotations: {
+            include: {
+              user: { select: { id: true, name: true, avatarColor: true } },
+              replies: {
+                include: {
+                  user: { select: { id: true, name: true, avatarColor: true } },
+                },
+                orderBy: { createdAt: 'asc' },
+              },
+            },
+            orderBy: { timestamp: 'asc' },
+          },
+          clips: {
+            include: {
+              creator: { select: { id: true, name: true, avatarColor: true } },
+              episode: { select: { id: true, title: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
           _count: { select: { annotations: true, clips: true } },
         },
         orderBy: { createdAt: 'desc' },

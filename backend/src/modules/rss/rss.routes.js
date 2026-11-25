@@ -38,6 +38,7 @@ router.get(
     const feedUrl = `${baseUrl}/api/shows/${show.id}/feed.xml`
 
     const itemsXml = show.episodes
+      .filter((ep) => ep.sourceType === 'UPLOAD' && ep.audioKey && ep.fileSize)
       .map((ep) => {
         const audioUrl = `${baseUrl}/api/episodes/${ep.id}/audio`
         const pubDate = new Date(ep.createdAt).toUTCString()

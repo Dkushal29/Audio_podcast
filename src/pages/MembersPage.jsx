@@ -16,22 +16,33 @@ export function MembersPage() {
   const cfg = getModeConfig(mode)
 
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState(mode === 'study' ? 'Student' : 'Editor')
+  const [role, setRole] = useState('MEMBER')
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const handleInvite = (e) => {
+  const handleInvite = async (e) => {
     e.preventDefault()
-    if (!name.trim() || !email.trim()) {
-      setError('Name and email are required.')
+    if (!email.trim() || !email.includes('@')) {
+      setError('A valid registered user email is required.')
       return
     }
-    inviteMember({ name: name.trim(), email: email.trim(), role })
-    setName('')
-    setEmail('')
-    setError('')
-    setInviteOpen(false)
+    try {
+      setSubmitting(true)
+      setError('')
+      await inviteMember({ email: email.trim(), role })
+      setEmail('')
+      setRole('MEMBER')
+      setInviteOpen(false)
+    } catch (err) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          'Could not add member.'
+      )
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -52,7 +63,7 @@ export function MembersPage() {
           onClick={() => setInviteOpen(true)}
         >
           <UserPlus className="w-4 h-4" />
-          Invite Member
+          Add Member
         </Button>
       </div>
 
@@ -72,51 +83,57 @@ export function MembersPage() {
 
             <div className="flex items-center gap-2">
               <Badge tone="neutral">{m.role}</Badge>
-              <Badge tone={m.status === 'Active' ? 'emerald' : 'amber'}>
-                {m.status}
-              </Badge>
+              <Badge tone="emerald">{m.status}</Badge>
             </div>
           </div>
         ))}
+        {members.length === 0 && (
+          <div className="p-6 text-center text-xs text-[#A1A1AA]">
+            No members found in this workspace yet.
+          </div>
+        )}
       </Card>
 
       <Modal
         isOpen={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        title="Invite Collaborator"
-        subtitle="Add a teammate to your EchoSpace demo workspace."
+        title="Add Collaborator"
+        subtitle="Add a registered EchoSpace user to this workspace by email."
       >
         <form onSubmit={handleInvite} className="space-y-4">
           <Input
-            label="Full Name"
-            placeholder="e.g. Kabir Sharma"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setError('')
-            }}
-          />
-          <Input
-            label="Email Address"
+            label="User Email Address"
             type="email"
-            placeholder="kabir@echospace.app"
+            placeholder="teammate@echospace.app"
             value={email}
             onChange={(e) => {
               setEmail(e.target.value)
               setError('')
             }}
           />
-          <Input
-            label="Role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-[#A1A1AA]">
+              Workspace Role
+            </label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full h-9 px-3 rounded-lg bg-[#09090B] border border-[#27272F] text-sm text-[#F4F4F5]"
+            >
+              <option value="MEMBER">MEMBER (Annotate, reply &amp; upload)</option>
+              <option value="EDITOR">EDITOR (Manage workspace &amp; content)</option>
+              <option value="VIEWER">VIEWER (Read &amp; listen only)</option>
+              <option value="OWNER">OWNER (Full control)</option>
+            </select>
+          </div>
           {error && <p className="text-xs text-rose-400">{error}</p>}
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setInviteOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Send Demo Invite</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Adding...' : 'Add Member'}
+            </Button>
           </div>
         </form>
       </Modal>

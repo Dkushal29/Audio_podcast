@@ -83,13 +83,17 @@ export const apiClient = {
   // Episodes & Audio
   async uploadEpisode(formData, onUploadProgress) {
     const { data } = await http.post('/episodes/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (evt) => {
         if (evt.total && onUploadProgress) {
           onUploadProgress(Math.round((evt.loaded * 100) / evt.total))
         }
       },
     })
+    return data.episode
+  },
+
+  async createExternalEpisode(payload) {
+    const { data } = await http.post('/episodes/external', payload)
     return data.episode
   },
 
@@ -143,10 +147,18 @@ export const apiClient = {
     return data.reply
   },
 
+  async deleteReply(replyId) {
+    await http.delete(`/replies/${replyId}`)
+  },
+
   // Clips
   async createClip(episodeId, payload) {
     const { data } = await http.post(`/episodes/${episodeId}/clips`, payload)
     return data.clip
+  },
+
+  async deleteClip(clipId) {
+    await http.delete(`/clips/${clipId}`)
   },
 
   async getClipByToken(token) {
@@ -193,6 +205,10 @@ export const apiClient = {
       episodeIds,
     })
     return data.playlist
+  },
+
+  async deletePlaylist(playlistId) {
+    await http.delete(`/playlists/${playlistId}`)
   },
 
   getShowRssUrl(showId) {

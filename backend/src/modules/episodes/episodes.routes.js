@@ -5,7 +5,9 @@ import { Router } from 'express'
 import multer from 'multer'
 import { env } from '../../config/env.js'
 import { requireAuth } from '../../middleware/auth.js'
+import { createRateLimiter } from '../../middleware/rateLimit.js'
 import {
+  createExternalEpisode,
   deleteEpisode,
   getEpisode,
   streamEpisodeAudio,
@@ -25,10 +27,12 @@ const upload = multer({
 })
 
 const router = Router()
+const uploadLimiter = createRateLimiter({ windowMs: 60_000, max: 20 })
 
 router.use(requireAuth)
 
-router.post('/upload', upload.single('audio'), uploadEpisode)
+router.post('/upload', uploadLimiter, upload.single('audio'), uploadEpisode)
+router.post('/external', createExternalEpisode)
 router.get('/:id', getEpisode)
 router.get('/:id/audio', streamEpisodeAudio)
 router.delete('/:id', deleteEpisode)

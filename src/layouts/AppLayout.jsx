@@ -1,12 +1,28 @@
-import React, { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import React, { useEffect, useState } from 'react'
+import { Navigate, Outlet } from 'react-router-dom'
 import { Sidebar } from '../components/layout/Sidebar'
 import { Navbar } from '../components/layout/Navbar'
 import { UploadRecordingModal } from '../components/dashboard/UploadRecordingModal'
+import { useEchoStore } from '../store/useEchoStore'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+
+  const token = useEchoStore((s) => s.token)
+  const isAuthenticated = useEchoStore((s) => s.isAuthenticated)
+  const activeWorkspaceId = useEchoStore((s) => s.activeWorkspaceId)
+  const loadWorkspaces = useEchoStore((s) => s.loadWorkspaces)
+
+  useEffect(() => {
+    if (token && !activeWorkspaceId) {
+      loadWorkspaces().catch(() => {})
+    }
+  }, [token, activeWorkspaceId, loadWorkspaces])
+
+  if (!isAuthenticated || !token) {
+    return <Navigate to="/login" replace />
+  }
 
   return (
     <div className="min-h-screen h-screen flex bg-[#09090B] text-[#F4F4F5] overflow-hidden">

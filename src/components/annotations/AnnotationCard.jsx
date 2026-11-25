@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Clock, MessageSquare } from 'lucide-react'
+import { Clock, MessageSquare, Pencil, Trash2 } from 'lucide-react'
 import { Avatar } from '../common/Avatar'
 import { ReplyThread } from '../discussions/ReplyThread'
 import { getCategoryMeta, getModeConfig, getStatusMeta } from '../../config/modeConfig'
@@ -9,12 +9,20 @@ export function AnnotationCard({
   annotation,
   mode,
   isActive = false,
+  canModify = false,
+  currentUserId = null,
+  isManager = false,
   onSeek,
   onStatusChange,
+  onEdit,
+  onDelete,
   onAddReply,
+  onDeleteReply,
   defaultExpanded = false,
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState(annotation.content)
   const cfg = getModeConfig(mode)
   const cat = getCategoryMeta(mode, annotation.category)
   const statusMeta = getStatusMeta(mode, annotation.status)
@@ -81,12 +89,49 @@ export function AnnotationCard({
         )}
       </div>
 
-      {/* Body */}
-      <p className="text-sm text-[#E4E4E7] mt-2.5 leading-relaxed">
-        {annotation.content}
-      </p>
+      {/* Body or Inline Edit */}
+      {editing ? (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (!editText.trim()) return
+            await onEdit?.(annotation.id, editText.trim())
+            setEditing(false)
+          }}
+          className="mt-2.5 space-y-2"
+        >
+          <textarea
+            rows={2}
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            className="w-full px-2.5 py-1.5 rounded bg-[#09090B] border border-[#27272F] text-xs text-[#F4F4F5] focus:outline-none focus:border-[#8B5CF6]"
+          />
+          <div className="flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setEditText(annotation.content)
+                setEditing(false)
+              }}
+              className="px-2 py-1 text-[11px] text-[#A1A1AA] hover:text-[#F4F4F5] cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded bg-[#8B5CF6] text-white text-[11px] font-medium cursor-pointer"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p className="text-sm text-[#E4E4E7] mt-2.5 leading-relaxed">
+          {annotation.content}
+        </p>
+      )}
 
-      {/* Footer toggle */}
+      {/* Footer toggle & edit/delete */}
       <div className="mt-3 flex items-center justify-between">
         <button
           type="button"
@@ -100,14 +145,53 @@ export function AnnotationCard({
           </span>
           <span className="text-[#71717A]">· {expanded ? 'Hide' : 'Discuss'}</span>
         </button>
+
+        {canModify && (onEdit || onDelete) && (
+          <div className="flex items-center gap-1.5">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditText(annotation.content)
+                  setEditing((p) => !p)
+                }}
+                className="p-1 rounded text-[#71717A] hover:text-[#F4F4F5] hover:bg-[#18181D] cursor-pointer"
+                title="Edit annotation"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Delete this annotation and its replies?')) {
+                    onDelete(annotation.id)
+                  }
+                }}
+                className="p-1 rounded text-[#71717A] hover:text-rose-400 hover:bg-[#18181D] cursor-pointer"
+                title="Delete annotation"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {expanded && (
         <ReplyThread
           replies={annotation.replies}
+          currentUserId={currentUserId}
+          isManager={isManager}
           onAddReply={
             onAddReply
               ? (text) => onAddReply(annotation.id, text)
+              : undefined
+          }
+          onDeleteReply={
+            onDeleteReply
+              ? (replyId) => onDeleteReply(annotation.id, replyId)
               : undefined
           }
         />

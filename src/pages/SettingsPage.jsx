@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, RotateCcw } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
@@ -14,23 +14,35 @@ export function SettingsPage() {
   const workspaceSettings = useEchoStore((s) => s.workspaceSettings)
   const updateProfile = useEchoStore((s) => s.updateProfile)
   const updateWorkspaceSettings = useEchoStore((s) => s.updateWorkspaceSettings)
-  const resetDemoData = useEchoStore((s) => s.resetDemoData)
 
-  const [name, setName] = useState(user.name)
-  const [email, setEmail] = useState(user.email)
+  const [name, setName] = useState(user?.name || '')
   const [studyName, setStudyName] = useState(workspaceSettings.studyName)
   const [creatorName, setCreatorName] = useState(workspaceSettings.creatorName)
+  const [saving, setSaving] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault()
-    updateProfile({ name: name.trim() || user.name, email: email.trim() || user.email })
-    updateWorkspaceSettings({
-      studyName: studyName.trim() || workspaceSettings.studyName,
-      creatorName: creatorName.trim() || workspaceSettings.creatorName,
-    })
-    setSavedNotice(true)
-    setTimeout(() => setSavedNotice(false), 2000)
+    try {
+      setSaving(true)
+      setError('')
+      await updateProfile({ name: name.trim() || user?.name })
+      await updateWorkspaceSettings({
+        studyName: studyName.trim() || workspaceSettings.studyName,
+        creatorName: creatorName.trim() || workspaceSettings.creatorName,
+      })
+      setSavedNotice(true)
+      setTimeout(() => setSavedNotice(false), 2000)
+    } catch (err) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          'Failed to save settings.'
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -51,15 +63,24 @@ export function SettingsPage() {
         )}
       </div>
 
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Profile */}
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold text-[#F4F4F5]">Profile</h2>
           <div className="flex items-center gap-3">
-            <Avatar name={user.name} color={user.avatarColor} size="lg" />
+            <Avatar
+              name={user?.name || 'User'}
+              color={user?.avatarColor || '#8B5CF6'}
+              size="lg"
+            />
             <div>
-              <p className="text-sm font-medium text-[#F4F4F5]">{user.name}</p>
-              <p className="text-xs text-[#A1A1AA]">{user.role}</p>
+              <p className="text-sm font-medium text-[#F4F4F5]">{user?.name}</p>
+              <p className="text-xs text-[#A1A1AA]">{user?.email}</p>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -71,13 +92,12 @@ export function SettingsPage() {
             <Input
               label="Email Address"
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={user?.email || ''}
+              disabled
             />
           </div>
         </Card>
 
-        {/* Workspace Settings */}
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold text-[#F4F4F5]">
             Workspace Settings
@@ -96,7 +116,6 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        {/* Members Summary */}
         <Card className="p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#F4F4F5]">
@@ -122,7 +141,6 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        {/* Preferences */}
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold text-[#F4F4F5]">Preferences</h2>
 
@@ -161,11 +179,6 @@ export function SettingsPage() {
               title: 'Discussion reply notifications',
               desc: 'Receive updates when teammates reply to your markers.',
             },
-            {
-              key: 'chromeExtensionSync',
-              title: 'Chrome Extension sync (Preview)',
-              desc: 'Prepare workspace to receive clips from the upcoming browser extension.',
-            },
           ].map((pref) => (
             <label
               key={pref.key}
@@ -187,19 +200,10 @@ export function SettingsPage() {
           ))}
         </Card>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button
-            variant="danger"
-            onClick={() => {
-              resetDemoData()
-              setSavedNotice(true)
-              setTimeout(() => setSavedNotice(false), 2000)
-            }}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset Demo Data
+        <div className="flex items-center justify-end">
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Saving...' : 'Save Changes'}
           </Button>
-          <Button type="submit">Save Changes</Button>
         </div>
       </form>
     </div>

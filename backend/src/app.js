@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import { env } from './config/env.js'
+import { prisma } from './config/prisma.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import usersRoutes from './modules/users/users.routes.js'
@@ -18,14 +19,35 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: env.corsOrigin,
+      origin(origin, callback) {
+        if (!origin) return callback(null, true)
+        if (env.corsOrigins.includes(origin)) return callback(null, true)
+        if (env.allowExtensionCors && origin.startsWith('chrome-extension://')) {
+          return callback(null, true)
+        }
+        return callback(new Error(`Origin ${origin} not allowed by CORS`))
+      },
       credentials: true,
+      exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
     })
   )
   app.use(express.json({ limit: '2mb' }))
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'echospace-backend' })
+  app.get('/api/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      res.json({
+        status: 'ok',
+        service: 'echospace-backend',
+        database: 'connected',
+      })
+    } catch {
+      res.status(503).json({
+        status: 'error',
+        service: 'echospace-backend',
+        database: 'disconnected',
+      })
+    }
   })
 
   app.use('/api/auth', authRoutes)

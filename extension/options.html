@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>EchoSpace Extension Settings</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body style="width: 100%; max-width: 480px; margin: 24px auto;">
+    <div class="container">
+      <h1>EchoSpace Extension Configuration</h1>
+      <p class="muted">Point the extension to your local or deployed EchoSpace server.</p>
+      <form id="options-form" class="card stack">
+        <label class="field">
+          <span>Backend API Base URL</span>
+          <input id="api-url" type="url" required placeholder="http://localhost:8080/api" />
+        </label>
+        <label class="field">
+          <span>Web App Base URL</span>
+          <input id="web-url" type="url" required placeholder="http://localhost:5173" />
+        </label>
+        <p id="saved-msg" class="success hidden">Configuration saved.</p>
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+      </form>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Scissors } from 'lucide-react'
+import { Scissors, Play } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Input, Textarea } from '../ui/Input'
 import { Button } from '../ui/Button'
@@ -9,44 +9,68 @@ export function ClipModal({
   isOpen,
   onClose,
   currentTime = 0,
-  duration = 42,
+  duration = 0,
   onSaveClip,
+  onPreviewInterval,
 }) {
   const [title, setTitle] = useState('')
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(10)
   const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const maxDuration = duration > 0 ? Math.floor(duration) : undefined
 
   useEffect(() => {
     if (isOpen) {
       const start = Math.max(0, Math.floor(currentTime))
-      const end = Math.min(Math.floor(duration || 42), start + 10)
+      const end =
+        duration > 0
+          ? Math.min(Math.floor(duration), start + 10)
+          : start + 10
       setStartTime(start)
       setEndTime(end > start ? end : start + 5)
       setError('')
     }
   }, [isOpen, currentTime, duration])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!title.trim()) {
       setError('Please enter a clip title.')
       return
     }
-    if (Number(endTime) <= Number(startTime)) {
+    if (Number(startTime) < 0 || Number(endTime) <= Number(startTime)) {
       setError('End time must be greater than start time.')
       return
     }
-    onSaveClip?.({
-      title: title.trim(),
-      startTime: Number(startTime),
-      endTime: Number(endTime),
-      notes: notes.trim(),
-    })
-    setTitle('')
-    setNotes('')
-    onClose()
+    if (duration > 0 && Number(endTime) > duration) {
+      setError(`End time cannot exceed recording duration (${Math.floor(duration)}s).`)
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      await onSaveClip?.({
+        title: title.trim(),
+        startTime: Number(startTime),
+        endTime: Number(endTime),
+        notes: notes.trim(),
+      })
+      setTitle('')
+      setNotes('')
+      onClose()
+    } catch (err) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          'Failed to save highlight clip.'
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -74,9 +98,12 @@ export function ClipModal({
               label={`Start (${formatTime(startTime)})`}
               type="number"
               min={0}
-              max={Math.floor(duration || 42)}
+              max={maxDuration}
               value={startTime}
-              onChange={(e) => setStartTime(Number(e.target.value))}
+              onChange={(e) => {
+                setStartTime(Number(e.target.value))
+                setError('')
+              }}
             />
           </div>
           <div>
@@ -84,9 +111,12 @@ export function ClipModal({
               label={`End (${formatTime(endTime)})`}
               type="number"
               min={1}
-              max={Math.floor(duration || 42)}
+              max={maxDuration}
               value={endTime}
-              onChange={(e) => setEndTime(Number(e.target.value))}
+              onChange={(e) => {
+                setEndTime(Number(e.target.value))
+                setError('')
+              }}
             />
           </div>
         </div>
@@ -98,14 +128,32 @@ export function ClipModal({
           onChange={(e) => setNotes(e.target.value)}
         />
 
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary">
-            <Scissors className="w-3.5 h-3.5" />
-            Save Highlight Clip
-          </Button>
+        <div className="flex items-center justify-between gap-2 pt-2">
+          <div>
+            {onPreviewInterval && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={saving || Number(endTime) <= Number(startTime)}
+                onClick={() =>
+                  onPreviewInterval(Number(startTime), Number(endTime))
+                }
+              >
+                <Play className="w-3.5 h-3.5" />
+                Preview Interval
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={saving}>
+              <Scissors className="w-3.5 h-3.5" />
+              {saving ? 'Saving...' : 'Save Highlight Clip'}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

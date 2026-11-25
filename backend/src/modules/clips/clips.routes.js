@@ -4,6 +4,7 @@ import { validate } from '../../middleware/validate.js'
 import {
   createClip,
   createClipSchema,
+  deleteClip,
   getClipByToken,
   listEpisodeClips,
   streamClipAudio,
@@ -18,6 +19,7 @@ router.post(
   createClip
 )
 router.get('/episodes/:id/clips', requireAuth, listEpisodeClips)
+router.delete('/clips/:id', requireAuth, deleteClip)
 router.get('/clips/:token', optionalAuth, getClipByToken)
 router.get('/clips/:token/audio', optionalAuth, streamClipAudio)
 

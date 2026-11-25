@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "EchoSpace Audio Clipper & Annotator",
+  "version": "1.0.0",
+  "description": "Capture timestamps from accessible HTML5 audio/video pages and save timestamped annotations to your EchoSpace workspaces.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": ["http://localhost:8080/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "EchoSpace",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

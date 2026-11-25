@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -6,15 +6,17 @@ import {
   Scissors,
   Clock,
   Tag,
+  Plus,
+  ExternalLink,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
-import { Waveform } from '../components/audio/Waveform'
 import { AudioPlayer } from '../components/audio/AudioPlayer'
 import { ChapterTimeline } from '../components/audio/ChapterTimeline'
 import { AnnotationCard } from '../components/annotations/AnnotationCard'
 import { AnnotationForm } from '../components/annotations/AnnotationForm'
+import { ClipCard } from '../components/clips/ClipCard'
 import { ClipModal } from '../components/clips/ClipModal'
 import { useEchoStore } from '../store/useEchoStore'
 import { getModeConfig } from '../config/modeConfig'
@@ -24,18 +26,32 @@ import {
   joinEpisodeRoom,
   leaveEpisodeRoom,
 } from '../services/socket'
+import { apiClient } from '../services/api'
+
+const DIRECT_AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?.*)?$/i
 
 export function AudioWorkspacePage() {
   const { id } = useParams()
   const token = useEchoStore((s) => s.token)
+  const user = useEchoStore((s) => s.user)
+  const activeWorkspaceRole = useEchoStore((s) => s.activeWorkspaceRole)
   const recordings = useEchoStore((s) => s.recordings)
   const annotations = useEchoStore((s) => s.annotations)
+  const clips = useEchoStore((s) => s.clips)
   const workspaceSettings = useEchoStore((s) => s.workspaceSettings)
+
   const loadEpisodeDetail = useEchoStore((s) => s.loadEpisodeDetail)
   const addAnnotation = useEchoStore((s) => s.addAnnotation)
   const updateAnnotationStatus = useEchoStore((s) => s.updateAnnotationStatus)
+  const editAnnotation = useEchoStore((s) => s.editAnnotation)
+  const deleteAnnotation = useEchoStore((s) => s.deleteAnnotation)
   const addReply = useEchoStore((s) => s.addReply)
+  const deleteReply = useEchoStore((s) => s.deleteReply)
   const addClip = useEchoStore((s) => s.addClip)
+  const deleteClip = useEchoStore((s) => s.deleteClip)
+  const addChapter = useEchoStore((s) => s.addChapter)
+  const deleteChapter = useEchoStore((s) => s.deleteChapter)
+
   const applySocketAnnotationCreated = useEchoStore(
     (s) => s.applySocketAnnotationCreated
   )
@@ -48,25 +64,28 @@ export function AudioWorkspacePage() {
   const applySocketReplyCreated = useEchoStore(
     (s) => s.applySocketReplyCreated
   )
+  const applySocketReplyDeleted = useEchoStore(
+    (s) => s.applySocketReplyDeleted
+  )
   const applySocketClipCreated = useEchoStore(
     (s) => s.applySocketClipCreated
   )
-
-  const recording =
-    recordings.find((r) => r.id === id) || recordings[0]
-
-  const mode = recording?.mode || 'study'
-  const cfg = getModeConfig(mode)
-
-  const waveSurferRef = useRef(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(recording?.duration || 42)
-  const [playbackRate, setPlaybackRate] = useState(
-    workspaceSettings.defaultPlaybackSpeed || 1
+  const applySocketClipDeleted = useEchoStore(
+    (s) => s.applySocketClipDeleted
   )
-  const [isLooping, setIsLooping] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
+
+  const recording = recordings.find((r) => r.id === id) || null
+  const isManager = ['OWNER', 'EDITOR'].includes(activeWorkspaceRole)
+  const canWrite = ['OWNER', 'EDITOR', 'MEMBER'].includes(activeWorkspaceRole)
+
+  const [loadingEpisode, setLoadingEpisode] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
+
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(recording?.duration || 0)
+  const [seekTarget, setSeekTarget] = useState(null)
+  const [activeClipRange, setActiveClipRange] = useState(null)
 
   const [categoryFilter, setCategoryFilter] = useState('ALL')
   const [selectedAnnotationId, setSelectedAnnotationId] = useState(null)
@@ -74,14 +93,43 @@ export function AudioWorkspacePage() {
   const [clipModalOpen, setClipModalOpen] = useState(false)
   const [clipToast, setClipToast] = useState(null)
 
-  React.useEffect(() => {
+  const [showChapterForm, setShowChapterForm] = useState(false)
+  const [chapterTitle, setChapterTitle] = useState('')
+  const [chapterError, setChapterError] = useState('')
+
+  useEffect(() => {
     if (!token || !id) return
-    loadEpisodeDetail(id).catch(() => {})
+    let active = true
+    setLoadingEpisode(true)
+    setLoadError('')
+    setActiveClipRange(null)
+
+    loadEpisodeDetail(id)
+      .then((ep) => {
+        if (active && ep) {
+          setDuration(ep.duration || 0)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setLoadError(
+            err.response?.data?.error?.message ||
+              'Could not load this recording.'
+          )
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingEpisode(false)
+      })
+
     joinEpisodeRoom(id)
 
     const socket = getSocket()
     if (!socket) {
-      return () => leaveEpisodeRoom(id)
+      return () => {
+        active = false
+        leaveEpisodeRoom(id)
+      }
     }
 
     const onAnnCreated = ({ annotation }) =>
@@ -91,82 +139,168 @@ export function AudioWorkspacePage() {
     const onAnnDeleted = ({ annotationId }) =>
       applySocketAnnotationDeleted(annotationId)
     const onReplyCreated = (payload) => applySocketReplyCreated(payload)
+    const onReplyDeleted = (payload) => applySocketReplyDeleted(payload)
     const onClipCreated = ({ clip }) => applySocketClipCreated(clip)
+    const onClipDeleted = ({ clipId }) => applySocketClipDeleted(clipId)
 
     socket.on('annotation:created', onAnnCreated)
     socket.on('annotation:updated', onAnnUpdated)
     socket.on('annotation:deleted', onAnnDeleted)
     socket.on('reply:created', onReplyCreated)
+    socket.on('reply:deleted', onReplyDeleted)
     socket.on('clip:created', onClipCreated)
+    socket.on('clip:deleted', onClipDeleted)
 
     return () => {
+      active = false
       leaveEpisodeRoom(id)
       socket.off('annotation:created', onAnnCreated)
       socket.off('annotation:updated', onAnnUpdated)
       socket.off('annotation:deleted', onAnnDeleted)
       socket.off('reply:created', onReplyCreated)
+      socket.off('reply:deleted', onReplyDeleted)
       socket.off('clip:created', onClipCreated)
+      socket.off('clip:deleted', onClipDeleted)
     }
   }, [token, id])
 
+  const mode = recording?.mode || 'study'
+  const cfg = getModeConfig(mode)
+
   const recordingAnnotations = useMemo(() => {
-    const list = annotations.filter((a) => a.recordingId === recording?.id)
+    if (!recording) return []
+    const list = annotations.filter((a) => a.recordingId === recording.id)
     const sorted = [...list].sort((a, b) => a.timestamp - b.timestamp)
     if (categoryFilter === 'ALL') return sorted
     return sorted.filter((a) => a.category === categoryFilter)
-  }, [annotations, recording?.id, categoryFilter])
+  }, [annotations, recording, categoryFilter])
 
-  if (!recording) {
+  const recordingClips = useMemo(() => {
+    if (!recording) return []
+    return clips.filter((c) => c.recordingId === recording.id)
+  }, [clips, recording])
+
+  if (loadingEpisode && !recording) {
     return (
       <div className="p-8 text-center text-sm text-[#A1A1AA]">
-        Recording not found.
+        Loading recording workspace...
       </div>
     )
   }
 
-  const seekTo = (time) => {
-    const ws = waveSurferRef.current
-    if (ws) {
-      ws.setTime(Math.max(0, Math.min(duration, time)))
-    }
-    setCurrentTime(time)
+  if (loadError && !recording) {
+    return (
+      <div className="max-w-xl mx-auto p-8 text-center space-y-4">
+        <p className="text-sm text-rose-400">{loadError}</p>
+        <Link to="/app/recordings">
+          <Button size="sm" variant="secondary">
+            Back to Recordings
+          </Button>
+        </Link>
+      </div>
+    )
   }
 
-  const seekRelative = (delta) => {
-    seekTo(currentTime + delta)
+  if (!recording) {
+    return (
+      <div className="max-w-xl mx-auto p-8 text-center space-y-4">
+        <p className="text-sm text-[#A1A1AA]">Recording not found.</p>
+        <Link to="/app/recordings">
+          <Button size="sm" variant="secondary">
+            Back to Recordings
+          </Button>
+        </Link>
+      </div>
+    )
   }
 
-  const handleToggleMute = () => {
-    const next = !isMuted
-    setIsMuted(next)
-    waveSurferRef.current?.setMuted(next)
+  const isExternalDirectAudio =
+    recording.sourceType === 'EXTERNAL_LINK' &&
+    Boolean(recording.sourceUrl && DIRECT_AUDIO_EXT_RE.test(recording.sourceUrl))
+
+  const playableRecording =
+    recording.sourceType === 'UPLOAD'
+      ? {
+          ...recording,
+          audioUrl: apiClient.getEpisodeAudioUrl(recording.id),
+        }
+      : isExternalDirectAudio
+        ? { ...recording, audioUrl: recording.sourceUrl }
+        : null
+
+  const seekTo = (time, autoplay = false) => {
+    const safe = Math.max(0, time)
+    setSeekTarget({ time: safe, autoplay, ts: Date.now() })
+    setCurrentTime(safe)
   }
 
-  const handleOpenAnnotate = () => {
-    if (workspaceSettings.autoPauseOnAnnotate && isPlaying) {
-      setIsPlaying(false)
-    }
-    setShowAnnotationForm(true)
+  const handlePlayClipInterval = (startTime, endTime) => {
+    setActiveClipRange({ startTime, endTime })
+    seekTo(startTime, true)
   }
 
   const handleCreateAnnotation = async ({ timestamp, category, content }) => {
-    const created = await addAnnotation({
-      recordingId: recording.id,
-      timestamp,
-      category,
-      content,
-    })
-    setSelectedAnnotationId(created.id)
-    setShowAnnotationForm(false)
+    try {
+      setActionError('')
+      const created = await addAnnotation({
+        recordingId: recording.id,
+        timestamp,
+        category,
+        content,
+      })
+      setSelectedAnnotationId(created.id)
+      setShowAnnotationForm(false)
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          'Failed to create annotation.'
+      )
+    }
   }
 
-  const handleSaveClip = (clipInput) => {
-    const created = addClip({
+  const handleAction = async (fn, fallbackMsg) => {
+    try {
+      setActionError('')
+      await fn()
+    } catch (err) {
+      setActionError(
+        err.response?.data?.error?.message || err.message || fallbackMsg
+      )
+    }
+  }
+
+  const handleSaveClip = async (clipInput) => {
+    const created = await addClip({
       recordingId: recording.id,
       ...clipInput,
     })
     setClipToast(created)
-    setTimeout(() => setClipToast(null), 5000)
+    setTimeout(() => setClipToast(null), 6000)
+  }
+
+  const handleCreateChapter = async (e) => {
+    e.preventDefault()
+    if (!chapterTitle.trim()) {
+      setChapterError('Chapter title is required.')
+      return
+    }
+    try {
+      setChapterError('')
+      await addChapter({
+        episodeId: recording.id,
+        title: chapterTitle.trim(),
+        startTime: Math.floor(currentTime),
+      })
+      setChapterTitle('')
+      setShowChapterForm(false)
+    } catch (err) {
+      setChapterError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          'Could not add chapter.'
+      )
+    }
   }
 
   return (
@@ -192,10 +326,16 @@ export function AudioWorkspacePage() {
           <span>·</span>
           <span className="inline-flex items-center gap-1 font-mono">
             <Clock className="w-3.5 h-3.5 text-[#22D3EE]" />
-            {formatTime(duration)}
+            {formatTime(duration || recording.duration)}
           </span>
         </div>
       </div>
+
+      {actionError && (
+        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+          {actionError}
+        </div>
+      )}
 
       {clipToast && (
         <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs">
@@ -204,7 +344,7 @@ export function AudioWorkspacePage() {
             {formatTime(clipToast.startTime)} – {formatTime(clipToast.endTime)}).
           </span>
           <Link
-            to={`/clip/${clipToast.id}`}
+            to={`/clips/${clipToast.shareToken || clipToast.id}`}
             className="font-medium text-[#22D3EE] hover:underline shrink-0"
           >
             Open Share Page →
@@ -216,15 +356,17 @@ export function AudioWorkspacePage() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         {/* Left/Main Audio Workspace (8 cols) */}
         <div className="xl:col-span-8 space-y-5">
-          <Card className="p-5 space-y-4">
+          <Card className="p-5 space-y-3">
             <div className="space-y-1.5">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#F4F4F5]">
                 {recording.title}
               </h1>
-              <p className="text-sm text-[#A1A1AA] leading-relaxed">
-                {recording.description}
-              </p>
-              {recording.tags.length > 0 && (
+              {recording.description && (
+                <p className="text-sm text-[#A1A1AA] leading-relaxed">
+                  {recording.description}
+                </p>
+              )}
+              {recording.tags?.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   <Tag className="w-3.5 h-3.5 text-[#71717A]" />
                   {recording.tags.map((t) => (
@@ -233,50 +375,87 @@ export function AudioWorkspacePage() {
                 </div>
               )}
             </div>
+          </Card>
 
-            {/* Prominent WaveSurfer Waveform */}
-            <Waveform
-              audioUrl={recording.audioUrl}
+          {/* Authoritative AudioPlayer for UPLOAD or direct audio EXTERNAL_LINK */}
+          {playableRecording ? (
+            <AudioPlayer
+              recording={playableRecording}
               mode={mode}
               annotations={recordingAnnotations}
-              selectedAnnotationId={selectedAnnotationId}
+              clips={recordingClips}
+              activeAnnotationId={selectedAnnotationId}
+              clipRange={activeClipRange}
+              seekToTime={seekTarget}
+              defaultSpeed={workspaceSettings.defaultPlaybackSpeed || 1}
+              onTimeUpdate={setCurrentTime}
+              onDurationChange={setDuration}
               onSelectAnnotation={(ann) => {
                 setSelectedAnnotationId(ann.id)
                 setCurrentTime(ann.timestamp)
               }}
-              isPlaying={isPlaying}
-              playbackRate={playbackRate}
-              isLooping={isLooping}
-              onReady={(dur) => setDuration(dur)}
-              onTimeUpdate={(t) => setCurrentTime(t)}
-              onPlayStateChange={(playing) => setIsPlaying(playing)}
-              waveSurferRef={waveSurferRef}
-              height={116}
+              onSelectClip={(clip) =>
+                setActiveClipRange({
+                  startTime: clip.startTime,
+                  endTime: clip.endTime,
+                })
+              }
+              onClearClipRange={() => setActiveClipRange(null)}
+              onCreateAnnotation={
+                canWrite
+                  ? (t) => {
+                      setCurrentTime(t)
+                      setShowAnnotationForm(true)
+                    }
+                  : undefined
+              }
+              onCreateClip={
+                canWrite
+                  ? (t) => {
+                      setCurrentTime(t)
+                      setClipModalOpen(true)
+                    }
+                  : undefined
+              }
             />
+          ) : (
+            <Card className="p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <p className="text-sm font-medium text-[#F4F4F5]">
+                    External Media Link
+                  </p>
+                  <p className="text-xs text-[#A1A1AA] truncate">
+                    {recording.sourceUrl}
+                  </p>
+                  <p className="text-[11px] text-[#71717A]">
+                    This link points to an external webpage rather than a direct
+                    audio stream. Open the original source to listen, and record
+                    timestamped notes below.
+                  </p>
+                </div>
+                {recording.sourceUrl && (
+                  <a
+                    href={recording.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg bg-[#18181D] border border-[#27272F] text-xs font-medium text-[#22D3EE] hover:border-[#22D3EE]/40"
+                  >
+                    Open Source Media
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
 
-            {/* Transport & Actions */}
-            <AudioPlayer
-              mode={mode}
-              isPlaying={isPlaying}
-              onTogglePlay={() => setIsPlaying((p) => !p)}
-              currentTime={currentTime}
-              duration={duration}
-              onSeekRelative={seekRelative}
-              playbackRate={playbackRate}
-              onChangePlaybackRate={(spd) => setPlaybackRate(spd)}
-              isLooping={isLooping}
-              onToggleLoop={() => setIsLooping((l) => !l)}
-              isMuted={isMuted}
-              onToggleMute={handleToggleMute}
-              rightActions={
-                <>
+              {canWrite && (
+                <div className="pt-3 border-t border-[#27272F] flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant={mode === 'study' ? 'cyan' : 'primary'}
-                    onClick={handleOpenAnnotate}
+                    onClick={() => setShowAnnotationForm(true)}
                   >
                     <MessageSquarePlus className="w-3.5 h-3.5" />
-                    Annotate
+                    Create Annotation
                   </Button>
                   <Button
                     size="sm"
@@ -286,18 +465,126 @@ export function AudioWorkspacePage() {
                     <Scissors className="w-3.5 h-3.5" />
                     Create Clip
                   </Button>
-                </>
-              }
-            />
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Chapters Card */}
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                Chapter Timeline
+              </span>
+              {canWrite && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowChapterForm((p) => !p)}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Chapter ({formatTime(currentTime)})
+                </Button>
+              )}
+            </div>
+
+            {showChapterForm && (
+              <form
+                onSubmit={handleCreateChapter}
+                className="flex flex-col sm:flex-row gap-2 pt-1"
+              >
+                <input
+                  type="text"
+                  value={chapterTitle}
+                  onChange={(e) => {
+                    setChapterTitle(e.target.value)
+                    setChapterError('')
+                  }}
+                  placeholder="Chapter title at current timestamp..."
+                  className="flex-1 h-9 px-3 rounded-lg bg-[#09090B] border border-[#27272F] text-sm text-[#F4F4F5] placeholder-[#71717A] focus:outline-none focus:border-[#8B5CF6]"
+                />
+                <Button type="submit" size="sm">
+                  Save Chapter
+                </Button>
+              </form>
+            )}
+            {chapterError && (
+              <p className="text-xs text-rose-400">{chapterError}</p>
+            )}
+
+            {recording.chapters?.length > 0 ? (
+              <ChapterTimeline
+                chapters={recording.chapters}
+                currentTime={currentTime}
+                onSelectChapter={(start) => seekTo(start)}
+                onDeleteChapter={
+                  canWrite
+                    ? (chapterId) =>
+                        handleAction(
+                          () => deleteChapter(recording.id, chapterId),
+                          'Failed to delete chapter.'
+                        )
+                    : undefined
+                }
+              />
+            ) : (
+              <p className="text-xs text-[#71717A]">
+                No chapters added yet. Seek to a moment and click Add Chapter.
+              </p>
+            )}
           </Card>
 
-          {/* Chapter Timeline */}
-          <Card className="p-5">
-            <ChapterTimeline
-              chapters={recording.chapters}
-              currentTime={currentTime}
-              onSelectChapter={(start) => seekTo(start)}
-            />
+          {/* Highlight Clips Section */}
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-[#F4F4F5]">
+                  Highlight Clips ({recordingClips.length})
+                </h2>
+                <p className="text-[11px] text-[#71717A]">
+                  Play exact intervals or share public clip links
+                </p>
+              </div>
+              {canWrite && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setClipModalOpen(true)}
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  Create Clip
+                </Button>
+              )}
+            </div>
+
+            {recordingClips.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {recordingClips.map((clip) => (
+                  <ClipCard
+                    key={clip.id}
+                    clip={clip}
+                    onPlayClip={
+                      playableRecording
+                        ? (c) => handlePlayClipInterval(c.startTime, c.endTime)
+                        : undefined
+                    }
+                    onDeleteClip={
+                      isManager || (user && clip.authorId === user.id)
+                        ? (clipId) =>
+                            handleAction(
+                              () => deleteClip(clipId),
+                              'Failed to delete clip.'
+                            )
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[#71717A]">
+                No highlight clips saved for this recording yet.
+              </p>
+            )}
           </Card>
         </div>
 
@@ -313,13 +600,15 @@ export function AudioWorkspacePage() {
                   Click any timestamp to jump in the waveform
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={handleOpenAnnotate}
-              >
-                + Note
-              </Button>
+              {canWrite && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowAnnotationForm(true)}
+                >
+                  + Note
+                </Button>
+              )}
             </div>
 
             {/* Category Filters */}
@@ -357,20 +646,67 @@ export function AudioWorkspacePage() {
                   {cfg.emptyStateText}
                 </div>
               ) : (
-                recordingAnnotations.map((ann) => (
-                  <AnnotationCard
-                    key={ann.id}
-                    annotation={ann}
-                    mode={mode}
-                    isSelected={selectedAnnotationId === ann.id}
-                    onSeek={(t) => {
-                      setSelectedAnnotationId(ann.id)
-                      seekTo(t)
-                    }}
-                    onStatusChange={updateAnnotationStatus}
-                    onAddReply={addReply}
-                  />
-                ))
+                recordingAnnotations.map((ann) => {
+                  const canModify =
+                    isManager || (user && ann.authorId === user.id)
+                  return (
+                    <AnnotationCard
+                      key={ann.id}
+                      annotation={ann}
+                      mode={mode}
+                      isActive={selectedAnnotationId === ann.id}
+                      canModify={canModify}
+                      currentUserId={user?.id}
+                      isManager={isManager}
+                      onSeek={(target) => {
+                        setSelectedAnnotationId(target.id)
+                        seekTo(target.timestamp)
+                      }}
+                      onStatusChange={
+                        canWrite
+                          ? (annId, status) =>
+                              handleAction(
+                                () => updateAnnotationStatus(annId, status),
+                                'Failed to update status.'
+                              )
+                          : undefined
+                      }
+                      onEdit={
+                        canModify
+                          ? (annId, content) =>
+                              handleAction(
+                                () => editAnnotation(annId, content),
+                                'Failed to edit annotation.'
+                              )
+                          : undefined
+                      }
+                      onDelete={
+                        canModify
+                          ? (annId) =>
+                              handleAction(
+                                () => deleteAnnotation(annId),
+                                'Failed to delete annotation.'
+                              )
+                          : undefined
+                      }
+                      onAddReply={
+                        canWrite
+                          ? (annId, text) =>
+                              handleAction(
+                                () => addReply(annId, text),
+                                'Failed to post reply.'
+                              )
+                          : undefined
+                      }
+                      onDeleteReply={(annId, replyId) =>
+                        handleAction(
+                          () => deleteReply(annId, replyId),
+                          'Failed to delete reply.'
+                        )
+                      }
+                    />
+                  )
+                })
               )}
             </div>
           </Card>
@@ -381,8 +717,13 @@ export function AudioWorkspacePage() {
         isOpen={clipModalOpen}
         onClose={() => setClipModalOpen(false)}
         currentTime={currentTime}
-        duration={duration}
+        duration={duration || recording.duration || 0}
         onSaveClip={handleSaveClip}
+        onPreviewInterval={
+          playableRecording
+            ? (start, end) => handlePlayClipInterval(start, end)
+            : undefined
+        }
       />
     </div>
   )

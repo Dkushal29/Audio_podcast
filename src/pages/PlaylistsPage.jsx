@@ -9,6 +9,7 @@ import {
   Copy,
   Check,
   ListMusic,
+  Trash2,
 } from 'lucide-react'
 import { PlaylistCard } from '../components/workspace/PlaylistCard'
 import { Card } from '../components/ui/Card'
@@ -26,6 +27,7 @@ export function PlaylistsPage() {
   const playlists = useEchoStore((s) => s.playlists)
   const recordings = useEchoStore((s) => s.recordings)
   const addPlaylist = useEchoStore((s) => s.addPlaylist)
+  const deletePlaylist = useEchoStore((s) => s.deletePlaylist)
   const reorderPlaylistRecordings = useEchoStore(
     (s) => s.reorderPlaylistRecordings
   )
@@ -146,6 +148,23 @@ export function PlaylistsPage() {
                   Play First
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={async () => {
+                  if (
+                    window.confirm(
+                      `Delete "${activePlaylist.title}"? Recordings will remain in your workspace.`
+                    )
+                  ) {
+                    await deletePlaylist(activePlaylist.id)
+                    setSelectedId(null)
+                  }
+                }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </Button>
             </div>
           </div>
 

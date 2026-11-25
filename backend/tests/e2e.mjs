@@ -250,7 +250,81 @@ async function run() {
   assert.ok(rssRes.data.includes('<enclosure '))
   assert.ok(rssRes.data.includes('Ep. 48 — Audio-First Dev Tools'))
 
-  console.log('\nALL 12 END-TO-END WORKFLOW CHECKS PASSED!')
+  console.log('13. Testing Chrome Extension EXTERNAL_LINK workflow & health check...')
+  const healthRes = await api('GET', '/health')
+  assert.equal(healthRes.status, 200)
+  assert.equal(healthRes.data.database, 'connected')
+
+  const extRes = await api('POST', '/episodes/external', {
+    token: token1,
+    body: {
+      workspaceId: studyWsId,
+      title: 'MIT 6.824 Lecture 6: Raft',
+      description: 'Captured from HTML5 <video>',
+      sourceUrl: 'https://example.com/lectures/raft',
+      duration: 3600,
+    },
+  })
+  assert.equal(extRes.status, 201)
+  assert.equal(extRes.data.episode.sourceType, 'EXTERNAL_LINK')
+
+  const extAudioRes = await api('GET', `/episodes/${extRes.data.episode.id}/audio`, {
+    token: token1,
+  })
+  assert.equal(extAudioRes.status, 400)
+
+  const extAnnRes = await api('POST', `/episodes/${extRes.data.episode.id}/annotations`, {
+    token: token1,
+    body: {
+      timestamp: 420,
+      category: 'INSIGHT',
+      content: 'Important Raft figure 2 invariant explanation.',
+    },
+  })
+  assert.equal(extAnnRes.status, 201)
+
+  console.log('14. Testing edit/delete & unauthorized RBAC enforcement...')
+  // User 2 (MEMBER) cannot delete User 1's annotation (403)
+  const unauthDelAnn = await api('DELETE', `/annotations/${extAnnRes.data.annotation.id}`, {
+    token: token2,
+  })
+  assert.equal(unauthDelAnn.status, 403)
+
+  // User 1 (OWNER) can edit and delete their annotation
+  const editAnnRes = await api('PATCH', `/annotations/${extAnnRes.data.annotation.id}`, {
+    token: token1,
+    body: { content: 'Updated Raft invariant note.' },
+  })
+  assert.equal(editAnnRes.status, 200)
+  assert.equal(editAnnRes.data.annotation.content, 'Updated Raft invariant note.')
+
+  const delAnnRes = await api('DELETE', `/annotations/${extAnnRes.data.annotation.id}`, {
+    token: token1,
+  })
+  assert.equal(delAnnRes.status, 204)
+
+  // Delete reply, clip, chapter, playlist
+  const delReplyRes = await api('DELETE', `/replies/${replyRes.data.reply.id}`, {
+    token: token2,
+  })
+  assert.equal(delReplyRes.status, 204)
+
+  const delClipRes = await api('DELETE', `/clips/${clipRes.data.clip.id}`, {
+    token: token1,
+  })
+  assert.equal(delClipRes.status, 204)
+
+  const delChapterRes = await api('DELETE', `/chapters/${chRes.data.chapter.id}`, {
+    token: token1,
+  })
+  assert.equal(delChapterRes.status, 204)
+
+  const delPlaylistRes = await api('DELETE', `/playlists/${plRes.data.playlist.id}`, {
+    token: token1,
+  })
+  assert.equal(delPlaylistRes.status, 204)
+
+  console.log('\nALL 14 END-TO-END WORKFLOW CHECKS PASSED!')
 }
 
 run().catch((err) => {

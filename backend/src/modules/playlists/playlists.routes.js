@@ -6,6 +6,7 @@ import {
   addEpisodeToPlaylist,
   createPlaylist,
   createPlaylistSchema,
+  deletePlaylist,
   listPlaylists,
   removeEpisodeFromPlaylist,
   reorderPlaylist,
@@ -21,6 +22,7 @@ router.post(
   validate(createPlaylistSchema),
   createPlaylist
 )
+router.delete('/playlists/:id', requireAuth, deletePlaylist)
 router.post(
   '/playlists/:id/episodes',
   requireAuth,

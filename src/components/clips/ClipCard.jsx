@@ -1,12 +1,13 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { Play, Share2, Clock, Eye } from 'lucide-react'
+import { Play, Share2, Clock, Eye, Trash2 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { formatTime } from '../../utils/time'
 
-export function ClipCard({ clip, onPlayClip }) {
-  const clipDuration = Math.max(1, clip.endTime - clip.startTime)
+export function ClipCard({ clip, onPlayClip, onDeleteClip }) {
+  const clipDuration = Math.max(1, Math.round(clip.endTime - clip.startTime))
+  const shareId = clip.shareToken || clip.id
 
   return (
     <Card interactive className="p-4 flex flex-col justify-between gap-3">
@@ -43,7 +44,7 @@ export function ClipCard({ clip, onPlayClip }) {
           </span>
           <span className="inline-flex items-center gap-1">
             <Eye className="w-3 h-3" />
-            {clip.views || 1}
+            {clip.views ?? 0}
           </span>
         </div>
 
@@ -59,12 +60,26 @@ export function ClipCard({ clip, onPlayClip }) {
             </button>
           )}
           <Link
-            to={`/clips/${clip.id}`}
+            to={`/clips/${shareId}`}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#09090B] hover:bg-[#18181D] border border-[#27272F] text-xs font-medium text-[#A1A1AA] hover:text-[#F4F4F5] transition-colors"
           >
             <Share2 className="w-3 h-3" />
             Share
           </Link>
+          {onDeleteClip && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Delete clip "${clip.title}"?`)) {
+                  onDeleteClip(clip.id)
+                }
+              }}
+              className="p-1.5 rounded-md bg-[#09090B] hover:bg-[#18181D] border border-[#27272F] text-[#71717A] hover:text-rose-400 transition-colors cursor-pointer"
+              title="Delete clip"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
     </Card>

@@ -7,6 +7,7 @@ import {
   ALL_ROLES,
   assertEpisodeMember,
   assertWorkspaceMember,
+  MANAGE_ROLES,
   WRITE_ROLES,
 } from '../../middleware/workspaceAuth.js'
 import { emitEpisodeEvent } from '../../sockets/index.js'
@@ -163,6 +164,14 @@ export const streamClipAudio = asyncHandler(async (req, res) => {
     await assertWorkspaceMember(clip.episode.workspaceId, req.user.id, ALL_ROLES)
   }
 
+  if (clip.episode.sourceType === 'EXTERNAL_LINK' || !clip.episode.audioKey) {
+    throw new AppError(
+      400,
+      'This clip belongs to an external media link without a locally hosted audio file.',
+      'EXTERNAL_LINK_NO_LOCAL_AUDIO'
+    )
+  }
+
   const stat = await storage.stat(clip.episode.audioKey)
   const fileSize = stat.size
   const range = req.headers.range
@@ -196,4 +205,34 @@ export const streamClipAudio = asyncHandler(async (req, res) => {
     })
     storage.createReadStream(clip.episode.audioKey).pipe(res)
   }
+})
+
+export const deleteClip = asyncHandler(async (req, res) => {
+  const clip = await prisma.clip.findUnique({
+    where: { id: req.params.id },
+  })
+  if (!clip) {
+    throw new AppError(404, 'Clip not found.', 'NOT_FOUND')
+  }
+
+  const { membership } = await assertEpisodeMember(
+    clip.episodeId,
+    req.user.id,
+    ALL_ROLES
+  )
+
+  const canDelete =
+    MANAGE_ROLES.includes(membership.role) || clip.creatorId === req.user.id
+  if (!canDelete) {
+    throw new AppError(403, 'You can only delete your own clips.', 'FORBIDDEN')
+  }
+
+  await prisma.clip.delete({ where: { id: clip.id } })
+
+  emitEpisodeEvent(clip.episodeId, 'clip:deleted', {
+    clipId: clip.id,
+    episodeId: clip.episodeId,
+  })
+
+  res.status(204).end()
 })

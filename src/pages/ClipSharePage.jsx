@@ -1,16 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowUpRight, Clock, Share2, Check, Eye } from 'lucide-react'
 import { Logo } from '../components/common/Logo'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
-import { Waveform } from '../components/audio/Waveform'
 import { AudioPlayer } from '../components/audio/AudioPlayer'
 import { AnnotationCard } from '../components/annotations/AnnotationCard'
 import { useEchoStore } from '../store/useEchoStore'
 import { formatTime } from '../utils/time'
-import { SAMPLE_AUDIO_URL } from '../data/mockData'
 import { apiClient } from '../services/api'
 
 export function ClipSharePage() {
@@ -51,16 +49,13 @@ export function ClipSharePage() {
   const recording = remoteClip
     ? {
         ...remoteClip.episode,
-        audioUrl: apiClient.getClipAudioUrl(remoteClip.shareToken),
+        audioUrl:
+          remoteClip.episode?.sourceType === 'UPLOAD'
+            ? apiClient.getClipAudioUrl(remoteClip.shareToken)
+            : null,
       }
     : recordings.find((r) => r.id === clip?.recordingId)
 
-  const waveSurferRef = useRef(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(clip?.startTime || 0)
-  const [duration, setDuration] = useState(recording?.duration || 42)
-  const [playbackRate, setPlaybackRate] = useState(1)
-  const [isLooping, setIsLooping] = useState(true)
   const [copied, setCopied] = useState(false)
 
   if (loading) {
@@ -157,40 +152,19 @@ export function ClipSharePage() {
             )}
           </div>
 
-          <Waveform
-            audioUrl={recording?.audioUrl || SAMPLE_AUDIO_URL}
-            mode={clip.mode}
-            annotations={associatedAnnotations}
-            isPlaying={isPlaying}
-            playbackRate={playbackRate}
-            loopRange={{ start: clip.startTime, end: clip.endTime }}
-            isLooping={isLooping}
-            onReady={(dur, ws) => {
-              setDuration(dur)
-              ws.setTime(clip.startTime)
-            }}
-            onTimeUpdate={(t) => setCurrentTime(t)}
-            onPlayStateChange={(p) => setIsPlaying(p)}
-            waveSurferRef={waveSurferRef}
-            height={100}
-          />
-
-          <AudioPlayer
-            mode={clip.mode}
-            isPlaying={isPlaying}
-            onTogglePlay={() => setIsPlaying((p) => !p)}
-            currentTime={currentTime}
-            duration={duration}
-            onSeekRelative={(d) =>
-              waveSurferRef.current?.setTime(
-                Math.max(clip.startTime, Math.min(clip.endTime, currentTime + d))
-              )
-            }
-            playbackRate={playbackRate}
-            onChangePlaybackRate={(s) => setPlaybackRate(s)}
-            isLooping={isLooping}
-            onToggleLoop={() => setIsLooping((l) => !l)}
-          />
+          {recording?.audioUrl ? (
+            <AudioPlayer
+              recording={recording}
+              mode={clip.mode}
+              annotations={associatedAnnotations}
+              clipRange={{ startTime: clip.startTime, endTime: clip.endTime }}
+              seekToTime={{ time: clip.startTime }}
+            />
+          ) : (
+            <div className="p-4 rounded-lg bg-[#09090B] border border-[#27272F] text-xs text-[#A1A1AA]">
+              This clip belongs to an external media link without locally hosted audio.
+            </div>
+          )}
         </Card>
 
         {/* Associated Discussion */}

@@ -65,12 +65,85 @@ const uploadBodySchema = z.object({
   tags: z.string().optional().default(''),
 })
 
+export const createExternalEpisodeSchema = z.object({
+  workspaceId: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).optional().default(''),
+  sourceUrl: z.string().url('A valid http/https URL is required'),
+  duration: z.coerce.number().min(0).optional().default(0),
+  showId: z.string().uuid().optional().or(z.literal('')),
+  playlistId: z.string().uuid().optional().or(z.literal('')),
+  tags: z.array(z.string()).optional().default([]),
+  reuseExisting: z.boolean().optional().default(true),
+})
+
+export const createExternalEpisode = asyncHandler(async (req, res) => {
+  const body = createExternalEpisodeSchema.parse(req.body)
+  await assertWorkspaceMember(body.workspaceId, req.user.id, WRITE_ROLES)
+
+  const parsedUrl = new URL(body.sourceUrl)
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    throw new AppError(400, 'Only http/https URLs are supported.', 'INVALID_URL')
+  }
+
+  if (body.reuseExisting) {
+    const existing = await prisma.episode.findFirst({
+      where: {
+        workspaceId: body.workspaceId,
+        sourceType: 'EXTERNAL_LINK',
+        sourceUrl: body.sourceUrl,
+      },
+      include: {
+        uploader: { select: { id: true, name: true, avatarColor: true } },
+        chapters: true,
+      },
+    })
+    if (existing) {
+      return res.json({ episode: existing, reused: true })
+    }
+  }
+
+  const episode = await prisma.episode.create({
+    data: {
+      workspaceId: body.workspaceId,
+      showId: body.showId || null,
+      uploaderId: req.user.id,
+      title: body.title.trim(),
+      description: body.description.trim(),
+      sourceType: 'EXTERNAL_LINK',
+      sourceUrl: body.sourceUrl,
+      duration: body.duration || 0,
+      tags: body.tags,
+    },
+    include: {
+      uploader: { select: { id: true, name: true, avatarColor: true } },
+      chapters: true,
+    },
+  })
+
+  if (body.playlistId) {
+    const count = await prisma.playlistEpisode.count({
+      where: { playlistId: body.playlistId },
+    })
+    await prisma.playlistEpisode.create({
+      data: {
+        playlistId: body.playlistId,
+        episodeId: episode.id,
+        position: count,
+      },
+    })
+  }
+
+  res.status(201).json({ episode, reused: false })
+})
+
 export const uploadEpisode = asyncHandler(async (req, res) => {
   const file = req.file
   if (!file) {
     throw new AppError(400, 'Audio file is required.', 'MISSING_FILE')
   }
 
+  let savedKey = null
   try {
     const body = uploadBodySchema.parse(req.body)
     await assertWorkspaceMember(body.workspaceId, req.user.id, WRITE_ROLES)
@@ -96,6 +169,7 @@ export const uploadEpisode = asyncHandler(async (req, res) => {
 
     const targetKey = `${uuidv4()}${ext}`
     await storage.saveLocalFile(file.path, targetKey)
+    savedKey = targetKey
 
     const parsedTags = body.tags
       ? body.tags
@@ -140,6 +214,9 @@ export const uploadEpisode = asyncHandler(async (req, res) => {
   } catch (err) {
     if (file?.path && fs.existsSync(file.path)) {
       await fs.promises.unlink(file.path).catch(() => {})
+    }
+    if (savedKey) {
+      await storage.remove(savedKey).catch(() => {})
     }
     throw err
   }
@@ -188,6 +265,14 @@ export const streamEpisodeAudio = asyncHandler(async (req, res) => {
     req.user.id,
     ALL_ROLES
   )
+
+  if (episode.sourceType === 'EXTERNAL_LINK' || !episode.audioKey) {
+    throw new AppError(
+      400,
+      'This recording is an external media link and does not have a locally hosted audio stream.',
+      'EXTERNAL_LINK_NO_LOCAL_AUDIO'
+    )
+  }
 
   let stat
   try {
@@ -251,7 +336,9 @@ export const deleteEpisode = asyncHandler(async (req, res) => {
   }
 
   await prisma.episode.delete({ where: { id: episode.id } })
-  await storage.remove(episode.audioKey)
+  if (episode.audioKey) {
+    await storage.remove(episode.audioKey)
+  }
 
   res.status(204).end()
 })

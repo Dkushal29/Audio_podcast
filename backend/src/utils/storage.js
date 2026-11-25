@@ -20,7 +20,16 @@ export const storage = {
   async saveLocalFile(tempPath, targetKey) {
     ensureUploadDir()
     const destPath = resolveKeyPath(targetKey)
-    await fs.promises.rename(tempPath, destPath)
+    try {
+      await fs.promises.rename(tempPath, destPath)
+    } catch (err) {
+      if (err.code === 'EXDEV') {
+        await fs.promises.copyFile(tempPath, destPath)
+        await fs.promises.unlink(tempPath).catch(() => {})
+      } else {
+        throw err
+      }
+    }
     return { key: path.basename(targetKey), path: destPath }
   },
 

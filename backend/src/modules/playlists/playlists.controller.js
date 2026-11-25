@@ -4,6 +4,7 @@ import { AppError, asyncHandler } from '../../utils/errors.js'
 import {
   ALL_ROLES,
   assertWorkspaceMember,
+  MANAGE_ROLES,
   WRITE_ROLES,
 } from '../../middleware/workspaceAuth.js'
 
@@ -163,4 +164,32 @@ export const reorderPlaylist = asyncHandler(async (req, res) => {
   })
 
   res.json({ playlist: updated })
+})
+
+export const deletePlaylist = asyncHandler(async (req, res) => {
+  const playlist = await prisma.playlist.findUnique({
+    where: { id: req.params.id },
+  })
+  if (!playlist) {
+    throw new AppError(404, 'Playlist not found.', 'NOT_FOUND')
+  }
+
+  const membership = await assertWorkspaceMember(
+    playlist.workspaceId,
+    req.user.id,
+    ALL_ROLES
+  )
+
+  const canDelete =
+    MANAGE_ROLES.includes(membership.role) || playlist.creatorId === req.user.id
+  if (!canDelete) {
+    throw new AppError(
+      403,
+      'You can only delete your own playlists.',
+      'FORBIDDEN'
+    )
+  }
+
+  await prisma.playlist.delete({ where: { id: playlist.id } })
+  res.status(204).end()
 })

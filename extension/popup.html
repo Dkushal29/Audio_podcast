@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EchoSpace Clipper</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="brand">
+          <span class="dot"></span>
+          <span>EchoSpace</span>
+        </div>
+        <div class="header-actions">
+          <button id="options-btn" class="link-btn" type="button">Config</button>
+          <button id="logout-btn" class="link-btn hidden" type="button">Sign Out</button>
+        </div>
+      </header>
+
+      <!-- Auth View -->
+      <section id="auth-view" class="card">
+        <h1>Sign in to EchoSpace</h1>
+        <p class="muted">Connect to save timestamped notes to your workspace.</p>
+        <form id="login-form" class="stack">
+          <label class="field">
+            <span>Email</span>
+            <input id="login-email" type="email" required placeholder="you@domain.com" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="login-password" type="password" required placeholder="••••••••" />
+          </label>
+          <p id="login-error" class="error hidden"></p>
+          <button id="login-submit" type="submit" class="btn btn-primary">
+            Sign In
+          </button>
+        </form>
+      </section>
+
+      <!-- Main Capture View -->
+      <section id="capture-view" class="stack hidden">
+        <div class="user-bar">
+          <span id="user-name" class="user-name"></span>
+          <div class="mode-toggle">
+            <button id="mode-study" type="button" class="mode-btn active">Study</button>
+            <button id="mode-creator" type="button" class="mode-btn">Creator</button>
+          </div>
+        </div>
+
+        <div class="card stack-sm">
+          <div class="row-between">
+            <span class="label">Detected Media</span>
+            <button id="refresh-media" type="button" class="link-btn">Refresh</button>
+          </div>
+          <p id="media-title" class="media-title">Inspecting active tab...</p>
+          <p id="media-url" class="muted truncate"></p>
+          <div id="media-status" class="status-pill"></div>
+        </div>
+
+        <form id="annotate-form" class="card stack-sm">
+          <label class="field">
+            <span>Workspace</span>
+            <select id="workspace-select" required></select>
+          </label>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>Category</span>
+              <select id="category-select"></select>
+            </label>
+            <label class="field">
+              <span>Timestamp (sec)</span>
+              <input id="timestamp-input" type="number" min="0" step="1" value="0" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Annotation Note</span>
+            <textarea id="note-input" rows="3" required placeholder="Write a question, insight, or feedback note..."></textarea>
+          </label>
+
+          <p id="capture-error" class="error hidden"></p>
+          <div id="capture-success" class="success hidden">
+            <span id="success-text">Saved!</span>
+            <a id="open-app-link" href="#" target="_blank" rel="noopener noreferrer">Open in EchoSpace ↗</a>
+          </div>
+
+          <button id="save-btn" type="submit" class="btn btn-primary">
+            Save Annotation
+          </button>
+        </form>
+      </section>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
