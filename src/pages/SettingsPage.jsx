@@ -1,0 +1,207 @@
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Check, RotateCcw } from 'lucide-react'
+import { Card } from '../components/ui/Card'
+import { Input } from '../components/ui/Input'
+import { Button } from '../components/ui/Button'
+import { Avatar } from '../components/common/Avatar'
+import { Badge } from '../components/ui/Badge'
+import { useEchoStore } from '../store/useEchoStore'
+
+export function SettingsPage() {
+  const user = useEchoStore((s) => s.user)
+  const members = useEchoStore((s) => s.members)
+  const workspaceSettings = useEchoStore((s) => s.workspaceSettings)
+  const updateProfile = useEchoStore((s) => s.updateProfile)
+  const updateWorkspaceSettings = useEchoStore((s) => s.updateWorkspaceSettings)
+  const resetDemoData = useEchoStore((s) => s.resetDemoData)
+
+  const [name, setName] = useState(user.name)
+  const [email, setEmail] = useState(user.email)
+  const [studyName, setStudyName] = useState(workspaceSettings.studyName)
+  const [creatorName, setCreatorName] = useState(workspaceSettings.creatorName)
+  const [savedNotice, setSavedNotice] = useState(false)
+
+  const handleSave = (e) => {
+    e.preventDefault()
+    updateProfile({ name: name.trim() || user.name, email: email.trim() || user.email })
+    updateWorkspaceSettings({
+      studyName: studyName.trim() || workspaceSettings.studyName,
+      creatorName: creatorName.trim() || workspaceSettings.creatorName,
+    })
+    setSavedNotice(true)
+    setTimeout(() => setSavedNotice(false), 2000)
+  }
+
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-[#F4F4F5]">Settings</h1>
+          <p className="text-sm text-[#A1A1AA] mt-0.5">
+            Manage your profile, workspace labels, members, and playback
+            preferences.
+          </p>
+        </div>
+        {savedNotice && (
+          <Badge tone="emerald">
+            <Check className="w-3 h-3" />
+            Saved
+          </Badge>
+        )}
+      </div>
+
+      <form onSubmit={handleSave} className="space-y-6">
+        {/* Profile */}
+        <Card className="p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[#F4F4F5]">Profile</h2>
+          <div className="flex items-center gap-3">
+            <Avatar name={user.name} color={user.avatarColor} size="lg" />
+            <div>
+              <p className="text-sm font-medium text-[#F4F4F5]">{user.name}</p>
+              <p className="text-xs text-[#A1A1AA]">{user.role}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Display Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Input
+              label="Email Address"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+        </Card>
+
+        {/* Workspace Settings */}
+        <Card className="p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[#F4F4F5]">
+            Workspace Settings
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Study Workspace Name"
+              value={studyName}
+              onChange={(e) => setStudyName(e.target.value)}
+            />
+            <Input
+              label="Creator Workspace Name"
+              value={creatorName}
+              onChange={(e) => setCreatorName(e.target.value)}
+            />
+          </div>
+        </Card>
+
+        {/* Members Summary */}
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[#F4F4F5]">
+              Members ({members.length})
+            </h2>
+            <Link
+              to="/app/members"
+              className="text-xs text-[#A78BFA] hover:underline"
+            >
+              Manage Members
+            </Link>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {members.map((m) => (
+              <div
+                key={m.id}
+                className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#09090B] border border-[#27272F] text-xs"
+              >
+                <Avatar name={m.name} color={m.avatarColor} size="xs" />
+                <span className="text-[#F4F4F5]">{m.name}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Preferences */}
+        <Card className="p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[#F4F4F5]">Preferences</h2>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-[#F4F4F5]">Default Playback Speed</p>
+              <p className="text-xs text-[#A1A1AA]">
+                Applied when opening a recording in the Audio Workspace.
+              </p>
+            </div>
+            <select
+              value={workspaceSettings.defaultPlaybackSpeed}
+              onChange={(e) =>
+                updateWorkspaceSettings({
+                  defaultPlaybackSpeed: Number(e.target.value),
+                })
+              }
+              className="h-9 px-3 rounded-lg bg-[#09090B] border border-[#27272F] text-sm text-[#F4F4F5]"
+            >
+              {[0.75, 1, 1.25, 1.5, 2].map((s) => (
+                <option key={s} value={s}>
+                  {s}x
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {[
+            {
+              key: 'autoPauseOnAnnotate',
+              title: 'Auto-pause when creating annotations',
+              desc: 'Pauses playback automatically when you click Create Annotation.',
+            },
+            {
+              key: 'emailNotifications',
+              title: 'Discussion reply notifications',
+              desc: 'Receive updates when teammates reply to your markers.',
+            },
+            {
+              key: 'chromeExtensionSync',
+              title: 'Chrome Extension sync (Preview)',
+              desc: 'Prepare workspace to receive clips from the upcoming browser extension.',
+            },
+          ].map((pref) => (
+            <label
+              key={pref.key}
+              className="flex items-center justify-between gap-4 pt-3 border-t border-[#27272F] cursor-pointer"
+            >
+              <div>
+                <p className="text-sm text-[#F4F4F5]">{pref.title}</p>
+                <p className="text-xs text-[#A1A1AA]">{pref.desc}</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(workspaceSettings[pref.key])}
+                onChange={(e) =>
+                  updateWorkspaceSettings({ [pref.key]: e.target.checked })
+                }
+                className="w-4 h-4 accent-[#8B5CF6] cursor-pointer"
+              />
+            </label>
+          ))}
+        </Card>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            variant="danger"
+            onClick={() => {
+              resetDemoData()
+              setSavedNotice(true)
+              setTimeout(() => setSavedNotice(false), 2000)
+            }}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset Demo Data
+          </Button>
+          <Button type="submit">Save Changes</Button>
+        </div>
+      </form>
+    </div>
+  )
+}

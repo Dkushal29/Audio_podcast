@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceMode {
+  STUDY
+  CREATOR
+}
+
+enum WorkspaceRole {
+  OWNER
+  EDITOR
+  MEMBER
+  VIEWER
+}
+
+enum AnnotationCategory {
+  QUESTION
+  INSIGHT
+  REVISION
+  FEEDBACK
+  CORRECTION
+  SUGGESTION
+}
+
+enum AnnotationStatus {
+  OPEN
+  RESOLVED
+}
+
+enum ClipVisibility {
+  PUBLIC
+  WORKSPACE
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String
+  avatarColor  String   @default("#8B5CF6")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedWorkspaces Workspace[]       @relation("WorkspaceOwner")
+  memberships     WorkspaceMember[]
+  episodes        Episode[]         @relation("EpisodeUploader")
+  annotations     Annotation[]
+  replies         AnnotationReply[]
+  clips           Clip[]
+  playlists       Playlist[]
+  bookmarks       Bookmark[]
+}
+
+model Workspace {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  mode      WorkspaceMode
+  ownerId   String        @db.Uuid
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  owner     User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members   WorkspaceMember[]
+  shows     Show[]
+  episodes  Episode[]
+  playlists Playlist[]
+
+  @@index([ownerId])
+  @@index([mode])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @db.Uuid
+  userId      String        @db.Uuid
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Show {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  title       String
+  description String   @default("")
+  author      String   @default("")
+  language    String   @default("en-us")
+  rssSlug     String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  episodes  Episode[]
+
+  @@index([workspaceId])
+}
+
+model Episode {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  showId      String?  @db.Uuid
+  uploaderId  String   @db.Uuid
+  title       String
+  description String   @default("")
+  audioKey    String
+  mimeType    String
+  fileSize    Int
+  duration    Float    @default(0)
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  show             Show?             @relation(fields: [showId], references: [id], onDelete: SetNull)
+  uploader         User              @relation("EpisodeUploader", fields: [uploaderId], references: [id], onDelete: Cascade)
+  annotations      Annotation[]
+  clips            Clip[]
+  chapters         Chapter[]
+  playlistEpisodes PlaylistEpisode[]
+  bookmarks        Bookmark[]
+
+  @@index([workspaceId])
+  @@index([showId])
+  @@index([uploaderId])
+}
+
+model Annotation {
+  id        String             @id @default(uuid()) @db.Uuid
+  episodeId String             @db.Uuid
+  userId    String             @db.Uuid
+  timestamp Float
+  category  AnnotationCategory
+  status    AnnotationStatus   @default(OPEN)
+  content   String
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  episode Episode           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies AnnotationReply[]
+
+  @@index([episodeId, timestamp])
+  @@index([userId])
+}
+
+model AnnotationReply {
+  id           String   @id @default(uuid()) @db.Uuid
+  annotationId String   @db.Uuid
+  userId       String   @db.Uuid
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  annotation Annotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([annotationId])
+}
+
+model Clip {
+  id          String         @id @default(uuid()) @db.Uuid
+  episodeId   String         @db.Uuid
+  creatorId   String         @db.Uuid
+  title       String
+  description String         @default("")
+  startTime   Float
+  endTime     Float
+  shareToken  String         @unique
+  visibility  ClipVisibility @default(PUBLIC)
+  views       Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  creator User    @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+  @@index([shareToken])
+}
+
+model Chapter {
+  id        String   @id @default(uuid()) @db.Uuid
+  episodeId String   @db.Uuid
+  title     String
+  startTime Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId, startTime])
+}
+
+model Playlist {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  creatorId   String   @db.Uuid
+  title       String
+  description String   @default("")
+  rssUrl      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User              @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  episodes  PlaylistEpisode[]
+
+  @@index([workspaceId])
+}
+
+model PlaylistEpisode {
+  id         String   @id @default(uuid()) @db.Uuid
+  playlistId String   @db.Uuid
+  episodeId  String   @db.Uuid
+  position   Int
+  addedAt    DateTime @default(now())
+
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  episode  Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, episodeId])
+  @@index([playlistId, position])
+}
+
+model Bookmark {
+  id        String   @id @default(uuid()) @db.Uuid
+  episodeId String   @db.Uuid
+  userId    String   @db.Uuid
+  timestamp Float
+  label     String?
+  createdAt DateTime @default(now())
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId, userId])
+}

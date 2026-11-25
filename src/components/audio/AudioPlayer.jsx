@@ -1,0 +1,280 @@
+import React, { useEffect, useRef, useState } from 'react'
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  RotateCw,
+  Repeat,
+  Volume2,
+  VolumeX,
+  MessageSquarePlus,
+  Scissors,
+} from 'lucide-react'
+import { Waveform } from './Waveform'
+import { Button } from '../ui/Button'
+import { formatTime } from '../../utils/time'
+
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
+
+export function AudioPlayer({
+  recording,
+  mode,
+  annotations = [],
+  activeAnnotationId = null,
+  clipRange = null,
+  seekToTime = null,
+  defaultSpeed = 1,
+  onTimeUpdate,
+  onSelectAnnotation,
+  onCreateAnnotation,
+  onCreateClip,
+}) {
+  const wsRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(recording?.duration || 0)
+  const [speed, setSpeed] = useState(defaultSpeed)
+  const [isLooping, setIsLooping] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+
+  // External seek requests (e.g. clicking an annotation timestamp or chapter)
+  useEffect(() => {
+    if (seekToTime !== null && seekToTime !== undefined && wsRef.current) {
+      const ws = wsRef.current
+      const target = Math.max(0, Math.min(seekToTime.time ?? seekToTime, duration || 9999))
+      ws.setTime(target)
+      setCurrentTime(target)
+      if (seekToTime.autoplay) {
+        ws.play()
+      }
+    }
+  }, [seekToTime, duration])
+
+  // Keep playback speed synced
+  useEffect(() => {
+    if (wsRef.current) {
+      wsRef.current.setPlaybackRate(speed)
+    }
+  }, [speed])
+
+  const handleTogglePlay = () => {
+    wsRef.current?.playPause()
+  }
+
+  const handleSkip = (delta) => {
+    if (!wsRef.current) return
+    const next = Math.max(0, Math.min(duration, currentTime + delta))
+    wsRef.current.setTime(next)
+    setCurrentTime(next)
+  }
+
+  const handleToggleMute = () => {
+    if (!wsRef.current) return
+    const nextMuted = !isMuted
+    wsRef.current.setVolume(nextMuted ? 0 : 1)
+    setIsMuted(nextMuted)
+  }
+
+  const handleTimeUpdate = (t) => {
+    setCurrentTime(t)
+    onTimeUpdate?.(t)
+    if (clipRange && isLooping && t >= clipRange.endTime) {
+      wsRef.current?.setTime(clipRange.startTime)
+    }
+  }
+
+  const handleFinish = () => {
+    if (isLooping && wsRef.current) {
+      wsRef.current.setTime(clipRange ? clipRange.startTime : 0)
+      wsRef.current.play()
+    }
+  }
+
+  const handleOpenAnnotate = () => {
+    if (isPlaying) {
+      wsRef.current?.pause()
+    }
+    onCreateAnnotation?.(Math.floor(currentTime))
+  }
+
+  const handleOpenClip = () => {
+    onCreateClip?.(Math.floor(currentTime))
+  }
+
+  return (
+    <div className="rounded-lg bg-[#111114] border border-[#27272F] p-4 sm:p-5 space-y-4">
+      {/* Waveform + Markers */}
+      <Waveform
+        audioUrl={recording.audioUrl}
+        mode={mode}
+        annotations={annotations}
+        activeAnnotationId={activeAnnotationId}
+        clipRange={clipRange}
+        waveSurferRef={wsRef}
+        onReady={(dur, ws) => {
+          setDuration(dur)
+          ws.setPlaybackRate(speed)
+        }}
+        onTimeUpdate={handleTimeUpdate}
+        onPlayStateChange={setIsPlaying}
+        onFinish={handleFinish}
+        onSelectAnnotation={(ann) => {
+          wsRef.current?.setTime(ann.timestamp)
+          setCurrentTime(ann.timestamp)
+          onSelectAnnotation?.(ann)
+        }}
+      />
+
+      {/* Transport & Action Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleSkip(-5)}
+            className="p-2 rounded-lg text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-[#18181D] transition-colors cursor-pointer"
+            title="Back 5s"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              mode === 'study'
+                ? 'bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B]'
+                : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white'
+            }`}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <Pause className="w-4 h-4 fill-current" />
+            ) : (
+              <Play className="w-4 h-4 fill-current ml-0.5" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSkip(5)}
+            className="p-2 rounded-lg text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-[#18181D] transition-colors cursor-pointer"
+            title="Forward 5s"
+          >
+            <RotateCw className="w-4 h-4" />
+          </button>
+
+          <div className="ml-2 font-mono text-xs text-[#F4F4F5] bg-[#09090B] border border-[#27272F] px-2.5 py-1.5 rounded-md">
+            <span>{formatTime(currentTime)}</span>
+            <span className="text-[#71717A] mx-1">/</span>
+            <span className="text-[#A1A1AA]">{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        {/* Speed, Loop, Volume */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center bg-[#09090B] border border-[#27272F] rounded-lg p-0.5">
+            {SPEEDS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSpeed(s)}
+                className={`px-2 py-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer ${
+                  speed === s
+                    ? 'bg-[#18181D] text-[#F4F4F5]'
+                    : 'text-[#A1A1AA] hover:text-[#F4F4F5]'
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsLooping((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+              isLooping
+                ? 'bg-[#8B5CF6]/15 border-[#8B5CF6]/40 text-[#A78BFA]'
+                : 'bg-[#09090B] border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5]'
+            }`}
+            title="Toggle loop playback"
+          >
+            <Repeat className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Loop</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleToggleMute}
+            className="p-2 rounded-lg bg-[#09090B] border border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5] transition-colors cursor-pointer"
+            title={isMuted ? 'Unmute' : 'Mute'}
+          >
+            {isMuted ? (
+              <VolumeX className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Chapter Timeline + Primary Workspace Actions */}
+      <div className="pt-3 border-t border-[#27272F] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+          <span className="text-[11px] uppercase tracking-wider text-[#71717A] font-medium mr-1 shrink-0">
+            Chapters
+          </span>
+          {(recording.chapters || []).map((ch) => {
+            const isCurrent =
+              currentTime >= ch.startTime &&
+              !recording.chapters.some(
+                (other) =>
+                  other.startTime > ch.startTime && currentTime >= other.startTime
+              )
+            return (
+              <button
+                key={ch.id}
+                type="button"
+                onClick={() => {
+                  wsRef.current?.setTime(ch.startTime)
+                  setCurrentTime(ch.startTime)
+                }}
+                className={`shrink-0 px-2.5 py-1 rounded-md text-xs border transition-colors cursor-pointer ${
+                  isCurrent
+                    ? 'bg-[#18181D] border-[#3F3F46] text-[#F4F4F5]'
+                    : 'bg-[#09090B] border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5]'
+                }`}
+              >
+                <span className="font-mono text-[10px] text-[#71717A] mr-1.5">
+                  {formatTime(ch.startTime)}
+                </span>
+                {ch.title}
+              </button>
+            )
+          })}
+        </div>
+
+        {(onCreateAnnotation || onCreateClip) && (
+          <div className="flex items-center gap-2 shrink-0">
+            {onCreateAnnotation && (
+              <Button
+                size="sm"
+                variant={mode === 'study' ? 'cyan' : 'primary'}
+                onClick={handleOpenAnnotate}
+              >
+                <MessageSquarePlus className="w-3.5 h-3.5" />
+                Create Annotation
+              </Button>
+            )}
+            {onCreateClip && (
+              <Button size="sm" variant="secondary" onClick={handleOpenClip}>
+                <Scissors className="w-3.5 h-3.5" />
+                Create Clip
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,51 @@
+import express from 'express'
+import cors from 'cors'
+import { env } from './config/env.js'
+import { errorHandler } from './middleware/errorHandler.js'
+import authRoutes from './modules/auth/auth.routes.js'
+import usersRoutes from './modules/users/users.routes.js'
+import workspacesRoutes from './modules/workspaces/workspaces.routes.js'
+import episodesRoutes from './modules/episodes/episodes.routes.js'
+import annotationsRoutes from './modules/annotations/annotations.routes.js'
+import repliesRoutes from './modules/replies/replies.routes.js'
+import clipsRoutes from './modules/clips/clips.routes.js'
+import chaptersRoutes from './modules/chapters/chapters.routes.js'
+import playlistsRoutes from './modules/playlists/playlists.routes.js'
+import rssRoutes from './modules/rss/rss.routes.js'
+
+export function createApp() {
+  const app = express()
+
+  app.use(
+    cors({
+      origin: env.corsOrigin,
+      credentials: true,
+    })
+  )
+  app.use(express.json({ limit: '2mb' }))
+
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', service: 'echospace-backend' })
+  })
+
+  app.use('/api/auth', authRoutes)
+  app.use('/api/users', usersRoutes)
+  app.use('/api/workspaces', workspacesRoutes)
+  app.use('/api/episodes', episodesRoutes)
+  app.use('/api', annotationsRoutes)
+  app.use('/api', repliesRoutes)
+  app.use('/api', clipsRoutes)
+  app.use('/api', chaptersRoutes)
+  app.use('/api', playlistsRoutes)
+  app.use('/api', rssRoutes)
+
+  app.use((_req, res) => {
+    res.status(404).json({
+      error: { code: 'NOT_FOUND', message: 'API route not found.' },
+    })
+  })
+
+  app.use(errorHandler)
+
+  return app
+}

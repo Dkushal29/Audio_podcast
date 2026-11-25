@@ -1,0 +1,117 @@
+import React, { useState } from 'react'
+import { Clock, MessageSquare } from 'lucide-react'
+import { Avatar } from '../common/Avatar'
+import { ReplyThread } from '../discussions/ReplyThread'
+import { getCategoryMeta, getModeConfig, getStatusMeta } from '../../config/modeConfig'
+import { formatTime } from '../../utils/time'
+
+export function AnnotationCard({
+  annotation,
+  mode,
+  isActive = false,
+  onSeek,
+  onStatusChange,
+  onAddReply,
+  defaultExpanded = false,
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+  const cfg = getModeConfig(mode)
+  const cat = getCategoryMeta(mode, annotation.category)
+  const statusMeta = getStatusMeta(mode, annotation.status)
+
+  return (
+    <div
+      className={`rounded-lg border p-3.5 transition-colors ${
+        isActive
+          ? 'bg-[#18181D] border-[#8B5CF6]/50'
+          : 'bg-[#111114] border-[#27272F] hover:border-[#3F3F46]'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Avatar name={annotation.authorName} size="sm" />
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-[#F4F4F5] truncate">
+              {annotation.authorName}
+            </p>
+            <p className="text-[11px] text-[#71717A]">{annotation.createdAt}</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onSeek?.(annotation)}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#09090B] border border-[#27272F] hover:border-[#3F3F46] font-mono text-[11px] text-[#F4F4F5] shrink-0 cursor-pointer"
+          title="Jump to timestamp"
+        >
+          <Clock className="w-3 h-3 text-[#A1A1AA]" />
+          {formatTime(annotation.timestamp)}
+        </button>
+      </div>
+
+      {/* Category & Status */}
+      <div className="flex items-center justify-between gap-2 mt-2.5">
+        <span
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] font-semibold tracking-wide ${cat.badgeClass}`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${cat.dotClass}`} />
+          {cat.label.toUpperCase()}
+        </span>
+
+        {onStatusChange ? (
+          <select
+            value={annotation.status}
+            onChange={(e) => onStatusChange(annotation.id, e.target.value)}
+            className={`px-2 py-0.5 rounded border text-[11px] font-medium bg-[#09090B] focus:outline-none cursor-pointer ${statusMeta.badgeClass}`}
+            aria-label="Annotation status"
+          >
+            {Object.entries(cfg.statusLabels).map(([key, meta]) => (
+              <option key={key} value={key} className="bg-[#111114] text-[#F4F4F5]">
+                {meta.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            className={`px-2 py-0.5 rounded border text-[11px] font-medium ${statusMeta.badgeClass}`}
+          >
+            {statusMeta.label}
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <p className="text-sm text-[#E4E4E7] mt-2.5 leading-relaxed">
+        {annotation.content}
+      </p>
+
+      {/* Footer toggle */}
+      <div className="mt-3 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="inline-flex items-center gap-1.5 text-xs text-[#A1A1AA] hover:text-[#F4F4F5] transition-colors cursor-pointer"
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>
+            {annotation.replies.length}{' '}
+            {annotation.replies.length === 1 ? 'reply' : 'replies'}
+          </span>
+          <span className="text-[#71717A]">· {expanded ? 'Hide' : 'Discuss'}</span>
+        </button>
+      </div>
+
+      {expanded && (
+        <ReplyThread
+          replies={annotation.replies}
+          onAddReply={
+            onAddReply
+              ? (text) => onAddReply(annotation.id, text)
+              : undefined
+          }
+        />
+      )}
+    </div>
+  )
+}
