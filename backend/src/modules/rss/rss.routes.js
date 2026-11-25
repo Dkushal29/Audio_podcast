@@ -22,6 +22,7 @@ router.get(
       include: {
         workspace: true,
         episodes: {
+          where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
           include: {
             uploader: { select: { name: true } },

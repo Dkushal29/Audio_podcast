@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { Play, Plus, Search, MessageSquareText, Clock } from 'lucide-react'
+import { Play, Plus, Search, MessageSquareText, Clock, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -12,11 +12,16 @@ export function RecordingsPage() {
   const navigate = useNavigate()
   const outletContext = useOutletContext() || {}
   const mode = useEchoStore((s) => s.mode)
+  const user = useEchoStore((s) => s.user)
+  const activeWorkspaceRole = useEchoStore((s) => s.activeWorkspaceRole)
   const recordings = useEchoStore((s) => s.recordings)
   const annotations = useEchoStore((s) => s.annotations)
+  const deleteRecording = useEchoStore((s) => s.deleteRecording)
   const cfg = getModeConfig(mode)
 
   const [query, setQuery] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const isManager = ['OWNER', 'EDITOR'].includes(activeWorkspaceRole)
 
   const modeRecordings = recordings.filter((r) => {
     if (r.mode !== mode) return false
@@ -63,6 +68,12 @@ export function RecordingsPage() {
           className="w-full h-9 pl-9 pr-3 rounded-lg bg-[#111114] border border-[#27272F] text-sm text-[#F4F4F5] placeholder-[#71717A] focus:outline-none focus:border-[#8B5CF6]"
         />
       </div>
+
+      {deleteError && (
+        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+          {deleteError}
+        </div>
+      )}
 
       {/* List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -121,10 +132,41 @@ export function RecordingsPage() {
                 <span>
                   {rec.authorName} · {rec.createdAt}
                 </span>
-                <span className="inline-flex items-center gap-1 text-[#A1A1AA]">
-                  <MessageSquareText className="w-3.5 h-3.5" />
-                  {annCount} notes
-                </span>
+                <div className="flex items-center gap-2.5">
+                  <span className="inline-flex items-center gap-1 text-[#A1A1AA]">
+                    <MessageSquareText className="w-3.5 h-3.5" />
+                    {annCount} notes
+                  </span>
+                  {(isManager || (user && rec.authorId === user.id)) && (
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        if (
+                          !window.confirm(
+                            `Delete "${rec.title}"? This removes the recording and its annotations/clips.`
+                          )
+                        ) {
+                          return
+                        }
+                        try {
+                          setDeleteError('')
+                          await deleteRecording(rec.id)
+                        } catch (err) {
+                          setDeleteError(
+                            err.response?.data?.error?.message ||
+                              err.message ||
+                              'Failed to delete recording.'
+                          )
+                        }
+                      }}
+                      className="p-1 rounded text-[#71717A] hover:text-rose-400 hover:bg-[#18181D] cursor-pointer"
+                      title="Delete recording"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </Card>
           )

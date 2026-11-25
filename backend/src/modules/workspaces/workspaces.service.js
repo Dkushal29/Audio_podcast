@@ -79,6 +79,7 @@ export async function getWorkspaceDetail(workspaceId, userId) {
       },
       shows: true,
       episodes: {
+        where: { deletedAt: null },
         include: {
           uploader: { select: { id: true, name: true, avatarColor: true } },
           chapters: { orderBy: { startTime: 'asc' } },

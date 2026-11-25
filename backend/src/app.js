@@ -13,6 +13,8 @@ import clipsRoutes from './modules/clips/clips.routes.js'
 import chaptersRoutes from './modules/chapters/chapters.routes.js'
 import playlistsRoutes from './modules/playlists/playlists.routes.js'
 import rssRoutes from './modules/rss/rss.routes.js'
+import notificationsRoutes from './modules/notifications/notifications.routes.js'
+import importsRoutes from './modules/imports/imports.routes.js'
 
 export function createApp() {
   const app = express()
@@ -60,6 +62,8 @@ export function createApp() {
   app.use('/api', chaptersRoutes)
   app.use('/api', playlistsRoutes)
   app.use('/api', rssRoutes)
+  app.use('/api/notifications', notificationsRoutes)
+  app.use('/api', importsRoutes)
 
   app.use((_req, res) => {
     res.status(404).json({

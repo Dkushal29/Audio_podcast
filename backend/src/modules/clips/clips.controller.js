@@ -111,7 +111,7 @@ export const getClipByToken = asyncHandler(async (req, res) => {
     },
   })
 
-  if (!clip) {
+  if (!clip || clip.episode?.deletedAt) {
     throw new AppError(404, 'Clip not found.', 'NOT_FOUND')
   }
 
@@ -153,7 +153,7 @@ export const streamClipAudio = asyncHandler(async (req, res) => {
     include: { episode: true },
   })
 
-  if (!clip) {
+  if (!clip || clip.episode?.deletedAt) {
     throw new AppError(404, 'Clip not found.', 'NOT_FOUND')
   }
 
@@ -190,20 +190,22 @@ export const streamClipAudio = asyncHandler(async (req, res) => {
       res.status(416).set({ 'Content-Range': `bytes */${fileSize}` }).end()
       return
     }
+    const stream = await storage.createReadStream(clip.episode.audioKey, { start, end })
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': end - start + 1,
       'Content-Type': clip.episode.mimeType,
     })
-    storage.createReadStream(clip.episode.audioKey, { start, end }).pipe(res)
+    stream.pipe(res)
   } else {
+    const stream = await storage.createReadStream(clip.episode.audioKey)
     res.writeHead(200, {
       'Content-Length': fileSize,
       'Accept-Ranges': 'bytes',
       'Content-Type': clip.episode.mimeType,
     })
-    storage.createReadStream(clip.episode.audioKey).pipe(res)
+    stream.pipe(res)
   }
 })
 
@@ -211,7 +213,7 @@ export const deleteClip = asyncHandler(async (req, res) => {
   const clip = await prisma.clip.findUnique({
     where: { id: req.params.id },
   })
-  if (!clip) {
+  if (!clip || clip.episode?.deletedAt) {
     throw new AppError(404, 'Clip not found.', 'NOT_FOUND')
   }
 

@@ -10,7 +10,7 @@ import {
 import { emitEpisodeEvent } from '../../sockets/index.js'
 
 const MODE_CATEGORIES = {
-  STUDY: ['QUESTION', 'INSIGHT', 'REVISION'],
+  STUDY: ['QUESTION', 'NOTE'],
   CREATOR: ['FEEDBACK', 'CORRECTION', 'SUGGESTION'],
 }
 
@@ -18,6 +18,7 @@ export const createAnnotationSchema = z.object({
   timestamp: z.number().min(0),
   category: z.enum([
     'QUESTION',
+    'NOTE',
     'INSIGHT',
     'REVISION',
     'FEEDBACK',
@@ -64,8 +65,14 @@ export const createAnnotation = asyncHandler(async (req, res) => {
     WRITE_ROLES
   )
 
+  const normalizedCategory =
+    episode.workspace.mode === 'STUDY' &&
+    (req.body.category === 'INSIGHT' || req.body.category === 'REVISION')
+      ? 'NOTE'
+      : req.body.category
+
   const allowedCategories = MODE_CATEGORIES[episode.workspace.mode] || []
-  if (!allowedCategories.includes(req.body.category)) {
+  if (!allowedCategories.includes(normalizedCategory)) {
     throw new AppError(
       400,
       `Category ${req.body.category} is not allowed in ${episode.workspace.mode} mode.`,
@@ -86,7 +93,7 @@ export const createAnnotation = asyncHandler(async (req, res) => {
       episodeId: episode.id,
       userId: req.user.id,
       timestamp: req.body.timestamp,
-      category: req.body.category,
+      category: normalizedCategory,
       content: req.body.content.trim(),
     },
     include: {

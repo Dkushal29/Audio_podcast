@@ -32,8 +32,14 @@ export function AudioPlayer({
   onClearClipRange,
   onCreateAnnotation,
   onCreateClip,
+  highlightStart = null,
+  onStartHighlight,
+  onStopHighlight,
+  onCancelHighlight,
 }) {
   const wsRef = useRef(null)
+  const pendingSeekRef = useRef(null)
+  const [isReady, setIsReady] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(recording?.duration || 0)
@@ -43,6 +49,7 @@ export function AudioPlayer({
 
   useEffect(() => {
     const initialDur = recording?.duration || 0
+    setIsReady(false)
     setDuration(initialDur)
     setCurrentTime(0)
     onDurationChange?.(initialDur)
@@ -50,18 +57,26 @@ export function AudioPlayer({
 
   if (!recording) return null
 
-  // External seek requests (e.g. clicking an annotation timestamp or chapter)
+  // External seek requests (e.g. clicking an annotation card, notification, or chapter)
   useEffect(() => {
-    if (seekToTime !== null && seekToTime !== undefined && wsRef.current) {
-      const ws = wsRef.current
-      const target = Math.max(0, Math.min(seekToTime.time ?? seekToTime, duration || 9999))
-      ws.setTime(target)
+    if (seekToTime === null || seekToTime === undefined) return
+    const rawTarget = seekToTime.time ?? seekToTime
+    const maxDur = duration > 0 ? duration : 999999
+    const target = Math.max(0, Math.min(rawTarget, maxDur))
+
+    if (!wsRef.current || !isReady) {
+      pendingSeekRef.current = { time: rawTarget, autoplay: Boolean(seekToTime.autoplay) }
       setCurrentTime(target)
-      if (seekToTime.autoplay) {
-        ws.play()
-      }
+      return
     }
-  }, [seekToTime, duration])
+
+    const ws = wsRef.current
+    ws.setTime(target)
+    setCurrentTime(target)
+    if (seekToTime.autoplay) {
+      ws.play()
+    }
+  }, [seekToTime, duration, isReady])
 
   // Keep playback speed synced
   useEffect(() => {
@@ -131,9 +146,18 @@ export function AudioPlayer({
         clipRange={clipRange}
         waveSurferRef={wsRef}
         onReady={(dur, ws) => {
+          setIsReady(true)
           setDuration(dur)
           onDurationChange?.(dur)
           ws.setPlaybackRate(speed)
+          if (pendingSeekRef.current) {
+            const { time, autoplay } = pendingSeekRef.current
+            pendingSeekRef.current = null
+            const clamped = Math.max(0, Math.min(time, dur || time))
+            ws.setTime(clamped)
+            setCurrentTime(clamped)
+            if (autoplay) ws.play()
+          }
         }}
         onTimeUpdate={handleTimeUpdate}
         onPlayStateChange={setIsPlaying}
@@ -297,8 +321,8 @@ export function AudioPlayer({
           })}
         </div>
 
-        {(onCreateAnnotation || onCreateClip) && (
-          <div className="flex items-center gap-2 shrink-0">
+        {(onCreateAnnotation || onCreateClip || onStartHighlight) && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {onCreateAnnotation && (
               <Button
                 size="sm"
@@ -309,7 +333,39 @@ export function AudioPlayer({
                 Create Annotation
               </Button>
             )}
-            {onCreateClip && (
+            {onStartHighlight && highlightStart === null && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onStartHighlight(currentTime)}
+              >
+                <span className="w-2 h-2 rounded-full bg-rose-400" />
+                Start Highlight
+              </Button>
+            )}
+            {highlightStart !== null && (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/12 border border-rose-500/35 text-xs">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+                <span className="text-rose-300 font-mono">
+                  {formatTime(highlightStart)} → {formatTime(currentTime)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onStopHighlight?.(currentTime)}
+                  className="ml-1 px-2 py-0.5 rounded bg-rose-500 text-white text-[11px] font-medium hover:bg-rose-600 cursor-pointer"
+                >
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCancelHighlight?.()}
+                  className="px-1.5 py-0.5 text-[11px] text-[#A1A1AA] hover:text-[#F4F4F5] cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {onCreateClip && highlightStart === null && (
               <Button size="sm" variant="secondary" onClick={handleOpenClip}>
                 <Scissors className="w-3.5 h-3.5" />
                 Create Clip

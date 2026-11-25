@@ -7,7 +7,7 @@ import {
   MANAGE_ROLES,
   WRITE_ROLES,
 } from '../../middleware/workspaceAuth.js'
-import { emitEpisodeEvent } from '../../sockets/index.js'
+import { emitEpisodeEvent, emitUserEvent } from '../../sockets/index.js'
 
 export const createReplySchema = z.object({
   content: z.string().min(1).max(3000),
@@ -37,6 +37,9 @@ export const listReplies = asyncHandler(async (req, res) => {
 export const createReply = asyncHandler(async (req, res) => {
   const annotation = await prisma.annotation.findUnique({
     where: { id: req.params.id },
+    include: {
+      episode: { select: { id: true, title: true, workspaceId: true } },
+    },
   })
   if (!annotation) {
     throw new AppError(404, 'Annotation not found.', 'NOT_FOUND')
@@ -59,6 +62,43 @@ export const createReply = asyncHandler(async (req, res) => {
     annotationId: annotation.id,
     reply,
   })
+
+  if (annotation.userId !== req.user.id) {
+    const recipientMember = await prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: annotation.episode.workspaceId,
+          userId: annotation.userId,
+        },
+      },
+    })
+
+    if (recipientMember) {
+      const notification = await prisma.notification.create({
+        data: {
+          recipientId: annotation.userId,
+          actorId: req.user.id,
+          type: 'QUESTION_ANSWERED',
+          workspaceId: annotation.episode.workspaceId,
+          episodeId: annotation.episodeId,
+          annotationId: annotation.id,
+          replyId: reply.id,
+          message: `Your ${annotation.category.toLowerCase()} was answered by ${req.user.name}.`,
+        },
+        include: {
+          actor: { select: { id: true, name: true, avatarColor: true } },
+        },
+      })
+
+      emitUserEvent(annotation.userId, 'notification:created', {
+        notification: {
+          ...notification,
+          timestamp: annotation.timestamp,
+          episodeTitle: annotation.episode.title,
+        },
+      })
+    }
+  }
 
   res.status(201).json({ reply })
 })

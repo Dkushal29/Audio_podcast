@@ -214,4 +214,45 @@ export const apiClient = {
   getShowRssUrl(showId) {
     return `${API_BASE_URL}/shows/${showId}/feed.xml`
   },
+
+  // Notifications
+  async listNotifications() {
+    const { data } = await http.get('/notifications')
+    return data
+  },
+
+  async markNotificationRead(id) {
+    const { data } = await http.patch(`/notifications/${id}/read`)
+    return data.notification
+  },
+
+  async markAllNotificationsRead() {
+    await http.post('/notifications/read-all')
+  },
+
+  // Imports (Direct Audio & Podcast RSS)
+  async previewRss(url) {
+    const { data } = await http.post('/imports/rss/preview', { url })
+    return data.feed
+  },
+
+  async createImport(payload) {
+    const { data } = await http.post('/imports', payload)
+    return data
+  },
+
+  async importRssEpisode(payload) {
+    const { data } = await http.post('/imports/rss/episode', payload)
+    return data
+  },
+
+  async getImportJob(id) {
+    const { data } = await http.get(`/imports/${id}`)
+    return data.job
+  },
+
+  async retryImportJob(id) {
+    const { data } = await http.post(`/imports/${id}/retry`)
+    return data.job
+  },
 }

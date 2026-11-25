@@ -44,6 +44,8 @@ export function initSocketServer(httpServer) {
   })
 
   io.on('connection', (socket) => {
+    socket.join(`user:${socket.user.id}`)
+
     socket.on('episode:join', async ({ episodeId } = {}, ack) => {
       try {
         if (!episodeId) {
@@ -73,4 +75,9 @@ export function initSocketServer(httpServer) {
 export function emitEpisodeEvent(episodeId, eventName, payload) {
   if (!ioInstance) return
   ioInstance.to(`episode:${episodeId}`).emit(eventName, payload)
+}
+
+export function emitUserEvent(userId, eventName, payload) {
+  if (!ioInstance || !userId) return
+  ioInstance.to(`user:${userId}`).emit(eventName, payload)
 }

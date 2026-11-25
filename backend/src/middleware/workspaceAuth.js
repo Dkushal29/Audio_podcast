@@ -39,8 +39,8 @@ export async function assertEpisodeMember(
   userId,
   allowedRoles = ALL_ROLES
 ) {
-  const episode = await prisma.episode.findUnique({
-    where: { id: episodeId },
+  const episode = await prisma.episode.findFirst({
+    where: { id: episodeId, deletedAt: null },
     include: { workspace: true },
   })
 

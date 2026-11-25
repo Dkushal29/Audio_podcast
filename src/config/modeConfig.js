@@ -37,18 +37,11 @@ export const MODES = {
         dotClass: 'bg-[#22D3EE]',
       },
       {
-        id: 'INSIGHT',
-        label: 'Insight',
+        id: 'NOTE',
+        label: 'Note',
         color: '#8B5CF6',
         badgeClass: 'bg-[#8B5CF6]/12 text-[#A78BFA] border-[#8B5CF6]/30',
         dotClass: 'bg-[#8B5CF6]',
-      },
-      {
-        id: 'REVISION',
-        label: 'Revision',
-        color: '#F59E0B',
-        badgeClass: 'bg-amber-500/12 text-amber-400 border-amber-500/30',
-        dotClass: 'bg-amber-400',
       },
     ],
     statusLabels: {
@@ -61,7 +54,7 @@ export const MODES = {
         badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
       },
     },
-    filters: ['ALL', 'QUESTION', 'INSIGHT', 'REVISION'],
+    filters: ['ALL', 'QUESTION', 'NOTE'],
     emptyStateText: 'No study annotations match this filter yet.',
   },
   creator: {
@@ -137,8 +130,12 @@ export function getModeConfig(mode) {
 
 export function getCategoryMeta(mode, categoryId) {
   const cfg = getModeConfig(mode)
+  const normalized =
+    mode === 'study' && (categoryId === 'INSIGHT' || categoryId === 'REVISION')
+      ? 'NOTE'
+      : categoryId
   return (
-    cfg.annotationCategories.find((c) => c.id === categoryId) ||
+    cfg.annotationCategories.find((c) => c.id === normalized) ||
     cfg.annotationCategories[0]
   )
 }

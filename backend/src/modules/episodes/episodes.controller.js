@@ -168,7 +168,7 @@ export const uploadEpisode = asyncHandler(async (req, res) => {
     }
 
     const targetKey = `${uuidv4()}${ext}`
-    await storage.saveLocalFile(file.path, targetKey)
+    await storage.saveLocalFile(file.path, targetKey, canonicalMime)
     savedKey = targetKey
 
     const parsedTags = body.tags
@@ -301,20 +301,22 @@ export const streamEpisodeAudio = asyncHandler(async (req, res) => {
     }
 
     const chunkSize = end - start + 1
+    const stream = await storage.createReadStream(episode.audioKey, { start, end })
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
       'Content-Type': episode.mimeType,
     })
-    storage.createReadStream(episode.audioKey, { start, end }).pipe(res)
+    stream.pipe(res)
   } else {
+    const stream = await storage.createReadStream(episode.audioKey)
     res.writeHead(200, {
       'Content-Length': fileSize,
       'Accept-Ranges': 'bytes',
       'Content-Type': episode.mimeType,
     })
-    storage.createReadStream(episode.audioKey).pipe(res)
+    stream.pipe(res)
   }
 })
 
@@ -335,10 +337,40 @@ export const deleteEpisode = asyncHandler(async (req, res) => {
     )
   }
 
-  await prisma.episode.delete({ where: { id: episode.id } })
-  if (episode.audioKey) {
+  // Stage 1: Atomically soft-delete in PostgreSQL so concurrent deletes or
+  // partial storage failures never leave a valid Episode pointing to missing audio.
+  const marked = await prisma.episode.updateMany({
+    where: { id: episode.id, deletedAt: null },
+    data: { deletedAt: new Date() },
+  })
+  if (marked.count === 0) {
+    throw new AppError(404, 'Episode already deleted.', 'NOT_FOUND')
+  }
+
+  // Stage 2: Remove physical/S3 audio for UPLOAD episodes (never remote EXTERNAL_LINK).
+  if (episode.sourceType === 'UPLOAD' && episode.audioKey) {
     await storage.remove(episode.audioKey)
   }
 
+  // Stage 3: Hard-delete Episode record (cascades annotations, replies, clips, chapters).
+  await prisma.episode.delete({ where: { id: episode.id } })
+
   res.status(204).end()
 })
+
+export async function cleanupPendingDeletedEpisodes() {
+  const pending = await prisma.episode.findMany({
+    where: { deletedAt: { not: null } },
+    select: { id: true, sourceType: true, audioKey: true },
+  })
+  for (const ep of pending) {
+    try {
+      if (ep.sourceType === 'UPLOAD' && ep.audioKey) {
+        await storage.remove(ep.audioKey)
+      }
+      await prisma.episode.delete({ where: { id: ep.id } })
+    } catch (err) {
+      console.error(`[Cleanup] Failed pending delete for episode ${ep.id}:`, err.message)
+    }
+  }
+}

@@ -9,6 +9,8 @@ export function ClipModal({
   isOpen,
   onClose,
   currentTime = 0,
+  initialStart = null,
+  initialEnd = null,
   duration = 0,
   onSaveClip,
   onPreviewInterval,
@@ -24,16 +26,21 @@ export function ClipModal({
 
   useEffect(() => {
     if (isOpen) {
-      const start = Math.max(0, Math.floor(currentTime))
+      const start =
+        initialStart !== null && initialStart !== undefined
+          ? Math.max(0, Math.floor(initialStart))
+          : Math.max(0, Math.floor(currentTime))
       const end =
-        duration > 0
-          ? Math.min(Math.floor(duration), start + 10)
-          : start + 10
+        initialEnd !== null && initialEnd !== undefined && initialEnd > start
+          ? Math.floor(initialEnd)
+          : duration > 0
+            ? Math.min(Math.floor(duration), start + 10)
+            : start + 10
       setStartTime(start)
       setEndTime(end > start ? end : start + 5)
       setError('')
     }
-  }, [isOpen, currentTime, duration])
+  }, [isOpen, currentTime, initialStart, initialEnd, duration])
 
   const handleSubmit = async (e) => {
     e.preventDefault()

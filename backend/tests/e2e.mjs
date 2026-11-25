@@ -129,11 +129,20 @@ async function run() {
     socket2.on('connect_error', reject)
   })
 
+  const socket1 = io(SOCKET_URL, { auth: { token: token1 } })
+  await new Promise((resolve, reject) => {
+    socket1.on('connect', resolve)
+    socket1.on('connect_error', reject)
+  })
+
   const annCreatedPromise = new Promise((resolve) => {
     socket2.once('annotation:created', resolve)
   })
+  const notifPromise = new Promise((resolve) => {
+    socket1.once('notification:created', resolve)
+  })
 
-  console.log('7. Adding QUESTION annotation at 14s (and verifying mode validation)...')
+  console.log('7. Adding QUESTION & NOTE annotations (and verifying mode validation)...')
   const invalidCatRes = await api('POST', `/episodes/${studyEpId}/annotations`, {
     token: token1,
     body: { timestamp: 14, category: 'FEEDBACK', content: 'Should fail in study mode' },
@@ -151,15 +160,48 @@ async function run() {
   assert.equal(annRes.status, 201)
   const annId = annRes.data.annotation.id
 
+  const noteRes = await api('POST', `/episodes/${studyEpId}/annotations`, {
+    token: token1,
+    body: {
+      timestamp: 20,
+      category: 'NOTE',
+      content: 'Unified Study Note at 0:20.',
+    },
+  })
+  assert.equal(noteRes.status, 201)
+  assert.equal(noteRes.data.annotation.category, 'NOTE')
+
   const socketAnnEvent = await annCreatedPromise
   assert.equal(socketAnnEvent.annotation.id, annId)
 
-  console.log('8. Replying using second user...')
+  console.log('8. Replying using second user & verifying real-time + persistent notification...')
   const replyRes = await api('POST', `/annotations/${annId}/replies`, {
     token: token2,
     body: { content: 'Yes, currentTerm increments before RequestVote RPCs.' },
   })
   assert.equal(replyRes.status, 201)
+
+  const notifEvent = await notifPromise
+  assert.equal(notifEvent.notification.annotationId, annId)
+
+  // Self-reply must NOT create a notification
+  const selfReplyRes = await api('POST', `/annotations/${annId}/replies`, {
+    token: token1,
+    body: { content: 'Thanks for clarifying!' },
+  })
+  assert.equal(selfReplyRes.status, 201)
+
+  const notifsRes = await api('GET', '/notifications', { token: token1 })
+  assert.equal(notifsRes.status, 200)
+  assert.equal(notifsRes.data.unreadCount, 1)
+
+  const markReadRes = await api('PATCH', `/notifications/${notifsRes.data.notifications[0].id}/read`, {
+    token: token1,
+  })
+  assert.equal(markReadRes.status, 200)
+  assert.equal(markReadRes.data.notification.isRead, true)
+
+  socket1.disconnect()
 
   console.log('9. Resolving the question...')
   const resolveRes = await api('PATCH', `/annotations/${annId}`, {
@@ -187,7 +229,7 @@ async function run() {
   const publicClipRes = await api('GET', `/clips/${shareToken}`)
   assert.equal(publicClipRes.status, 200)
   assert.equal(publicClipRes.data.clip.title, 'Split-Vote Term Increment')
-  assert.equal(publicClipRes.data.clip.annotations.length, 1)
+  assert.equal(publicClipRes.data.clip.annotations.length, 2)
 
   const clipAudioRes = await fetch(`${BASE_URL}/clips/${shareToken}/audio`, {
     headers: { Range: 'bytes=0-255' },
@@ -324,7 +366,31 @@ async function run() {
   })
   assert.equal(delPlaylistRes.status, 204)
 
-  console.log('\nALL 14 END-TO-END WORKFLOW CHECKS PASSED!')
+  console.log('15. Testing SSRF blocking & secure recording deletion...')
+  const ssrfLocal = await api('POST', '/imports', {
+    token: token1,
+    body: { workspaceId: studyWsId, url: 'http://127.0.0.1:8080/secret.mp3' },
+  })
+  assert.equal(ssrfLocal.status, 400)
+
+  const ssrfMeta = await api('POST', '/imports', {
+    token: token1,
+    body: { workspaceId: studyWsId, url: 'http://169.254.169.254/latest/meta-data/' },
+  })
+  assert.equal(ssrfMeta.status, 400)
+
+  // Unauthorized user2 cannot delete user1's episode
+  const unauthDelEp = await api('DELETE', `/episodes/${studyEpId}`, { token: token2 })
+  assert.equal(unauthDelEp.status, 403)
+
+  // Authorized owner can delete episode and physical file
+  const delEpRes = await api('DELETE', `/episodes/${studyEpId}`, { token: token1 })
+  assert.equal(delEpRes.status, 204)
+
+  const getDeletedEp = await api('GET', `/episodes/${studyEpId}`, { token: token1 })
+  assert.equal(getDeletedEp.status, 404)
+
+  console.log('\nALL 15 END-TO-END WORKFLOW CHECKS PASSED!')
 }
 
 run().catch((err) => {

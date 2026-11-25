@@ -4,6 +4,7 @@ import { Sidebar } from '../components/layout/Sidebar'
 import { Navbar } from '../components/layout/Navbar'
 import { UploadRecordingModal } from '../components/dashboard/UploadRecordingModal'
 import { useEchoStore } from '../store/useEchoStore'
+import { getSocket } from '../services/socket'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -13,12 +14,26 @@ export function AppLayout() {
   const isAuthenticated = useEchoStore((s) => s.isAuthenticated)
   const activeWorkspaceId = useEchoStore((s) => s.activeWorkspaceId)
   const loadWorkspaces = useEchoStore((s) => s.loadWorkspaces)
+  const loadNotifications = useEchoStore((s) => s.loadNotifications)
+  const addSocketNotification = useEchoStore((s) => s.addSocketNotification)
 
   useEffect(() => {
     if (token && !activeWorkspaceId) {
       loadWorkspaces().catch(() => {})
     }
   }, [token, activeWorkspaceId, loadWorkspaces])
+
+  useEffect(() => {
+    if (!token) return
+    loadNotifications().catch(() => {})
+    const socket = getSocket()
+    if (!socket) return
+    const onNotif = ({ notification }) => {
+      if (notification) addSocketNotification(notification)
+    }
+    socket.on('notification:created', onNotif)
+    return () => socket.off('notification:created', onNotif)
+  }, [token, loadNotifications, addSocketNotification])
 
   if (!isAuthenticated || !token) {
     return <Navigate to="/login" replace />

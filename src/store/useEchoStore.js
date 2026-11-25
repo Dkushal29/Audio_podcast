@@ -35,12 +35,18 @@ function normalizeEpisode(ep, mode) {
 }
 
 function normalizeAnnotation(ann, mode) {
+  const modeLower = (mode || 'study').toLowerCase()
+  const rawCat = ann.category
+  const category =
+    modeLower === 'study' && (rawCat === 'INSIGHT' || rawCat === 'REVISION')
+      ? 'NOTE'
+      : rawCat
   return {
     id: ann.id,
     recordingId: ann.episodeId,
-    mode: (mode || 'study').toLowerCase(),
+    mode: modeLower,
     timestamp: ann.timestamp,
-    category: ann.category,
+    category,
     status: (ann.status || 'OPEN').toUpperCase(),
     authorId: ann.userId,
     authorName: ann.user?.name || 'Member',
@@ -138,6 +144,8 @@ export const useEchoStore = create(
       playlists: [],
       members: [],
       activity: [],
+      notifications: [],
+      unreadNotifications: 0,
 
       workspaceSettings: {
         studyName: 'Study Workspace',
@@ -186,6 +194,8 @@ export const useEchoStore = create(
           playlists: [],
           members: [],
           activity: [],
+          notifications: [],
+          unreadNotifications: 0,
         })
       },
 
@@ -399,6 +409,56 @@ export const useEchoStore = create(
             : [norm, ...state.recordings],
         }))
         return norm
+      },
+
+      deleteRecording: async (episodeId) => {
+        await apiClient.deleteEpisode(episodeId)
+        set((state) => ({
+          recordings: state.recordings.filter((r) => r.id !== episodeId),
+          annotations: state.annotations.filter((a) => a.recordingId !== episodeId),
+          clips: state.clips.filter((c) => c.recordingId !== episodeId),
+        }))
+      },
+
+      loadNotifications: async () => {
+        const { token } = get()
+        if (!token) return
+        const { notifications, unreadCount } = await apiClient.listNotifications()
+        set({ notifications, unreadNotifications: unreadCount })
+      },
+
+      markNotificationRead: async (id) => {
+        await apiClient.markNotificationRead(id)
+        set((state) => {
+          const next = state.notifications.map((n) =>
+            n.id === id ? { ...n, isRead: true } : n
+          )
+          return {
+            notifications: next,
+            unreadNotifications: next.filter((n) => !n.isRead).length,
+          }
+        })
+      },
+
+      markAllNotificationsRead: async () => {
+        await apiClient.markAllNotificationsRead()
+        set((state) => ({
+          notifications: state.notifications.map((n) => ({ ...n, isRead: true })),
+          unreadNotifications: 0,
+        }))
+      },
+
+      addSocketNotification: (notification) => {
+        set((state) => {
+          if (state.notifications.some((n) => n.id === notification.id)) {
+            return state
+          }
+          const next = [notification, ...state.notifications]
+          return {
+            notifications: next,
+            unreadNotifications: next.filter((n) => !n.isRead).length,
+          }
+        })
       },
 
       addAnnotation: async ({ recordingId, timestamp, category, content }) => {

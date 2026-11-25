@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   MessageSquarePlus,
@@ -8,6 +8,7 @@ import {
   Tag,
   Plus,
   ExternalLink,
+  Trash2,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -32,6 +33,8 @@ const DIRECT_AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?.*)?$/i
 
 export function AudioWorkspacePage() {
   const { id } = useParams()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const token = useEchoStore((s) => s.token)
   const user = useEchoStore((s) => s.user)
   const activeWorkspaceRole = useEchoStore((s) => s.activeWorkspaceRole)
@@ -41,6 +44,7 @@ export function AudioWorkspacePage() {
   const workspaceSettings = useEchoStore((s) => s.workspaceSettings)
 
   const loadEpisodeDetail = useEchoStore((s) => s.loadEpisodeDetail)
+  const deleteRecording = useEchoStore((s) => s.deleteRecording)
   const addAnnotation = useEchoStore((s) => s.addAnnotation)
   const updateAnnotationStatus = useEchoStore((s) => s.updateAnnotationStatus)
   const editAnnotation = useEchoStore((s) => s.editAnnotation)
@@ -91,7 +95,19 @@ export function AudioWorkspacePage() {
   const [selectedAnnotationId, setSelectedAnnotationId] = useState(null)
   const [showAnnotationForm, setShowAnnotationForm] = useState(false)
   const [clipModalOpen, setClipModalOpen] = useState(false)
+  const [highlightStart, setHighlightStart] = useState(null)
+  const [clipInitialRange, setClipInitialRange] = useState({ start: null, end: null })
   const [clipToast, setClipToast] = useState(null)
+
+  // Deep-link timestamp & annotation selection from Notifications (?t=...&ann=...)
+  useEffect(() => {
+    const tParam = searchParams.get('t')
+    const annParam = searchParams.get('ann')
+    if (annParam) setSelectedAnnotationId(annParam)
+    if (tParam !== null && !Number.isNaN(Number(tParam))) {
+      setSeekTarget({ time: Math.max(0, Number(tParam)), autoplay: false, ts: Date.now() })
+    }
+  }, [id, searchParams])
 
   const [showChapterForm, setShowChapterForm] = useState(false)
   const [chapterTitle, setChapterTitle] = useState('')
@@ -328,6 +344,29 @@ export function AudioWorkspacePage() {
             <Clock className="w-3.5 h-3.5 text-[#22D3EE]" />
             {formatTime(duration || recording.duration)}
           </span>
+          {(isManager || (user && recording.authorId === user.id)) && (
+            <button
+              type="button"
+              onClick={() =>
+                handleAction(async () => {
+                  if (
+                    !window.confirm(
+                      `Delete "${recording.title}"? This action cannot be undone.`
+                    )
+                  ) {
+                    return
+                  }
+                  await deleteRecording(recording.id)
+                  navigate('/app/recordings')
+                }, 'Failed to delete recording.')
+              }
+              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#27272F] text-[#A1A1AA] hover:text-rose-400 hover:border-rose-500/40 transition-colors cursor-pointer"
+              title="Delete recording"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </button>
+          )}
         </div>
       </div>
 
@@ -413,10 +452,27 @@ export function AudioWorkspacePage() {
                 canWrite
                   ? (t) => {
                       setCurrentTime(t)
+                      setClipInitialRange({ start: null, end: null })
                       setClipModalOpen(true)
                     }
                   : undefined
               }
+              highlightStart={highlightStart}
+              onStartHighlight={
+                canWrite ? (t) => setHighlightStart(Math.floor(t)) : undefined
+              }
+              onStopHighlight={
+                canWrite
+                  ? (t) => {
+                      const start = highlightStart ?? Math.floor(t)
+                      const end = Math.max(start + 1, Math.floor(t))
+                      setHighlightStart(null)
+                      setClipInitialRange({ start, end })
+                      setClipModalOpen(true)
+                    }
+                  : undefined
+              }
+              onCancelHighlight={() => setHighlightStart(null)}
             />
           ) : (
             <Card className="p-5 space-y-4">
@@ -715,8 +771,13 @@ export function AudioWorkspacePage() {
 
       <ClipModal
         isOpen={clipModalOpen}
-        onClose={() => setClipModalOpen(false)}
+        onClose={() => {
+          setClipModalOpen(false)
+          setClipInitialRange({ start: null, end: null })
+        }}
         currentTime={currentTime}
+        initialStart={clipInitialRange.start}
+        initialEnd={clipInitialRange.end}
         duration={duration || recording.duration || 0}
         onSaveClip={handleSaveClip}
         onPreviewInterval={

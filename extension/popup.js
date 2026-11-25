@@ -1,8 +1,7 @@
 const MODE_CATEGORIES = {
   STUDY: [
     { id: 'QUESTION', label: 'Question' },
-    { id: 'INSIGHT', label: 'Insight' },
-    { id: 'REVISION', label: 'Revision' },
+    { id: 'NOTE', label: 'Note' },
   ],
   CREATOR: [
     { id: 'FEEDBACK', label: 'Feedback' },

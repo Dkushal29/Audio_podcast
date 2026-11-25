@@ -27,9 +27,18 @@ export function AnnotationCard({
   const cat = getCategoryMeta(mode, annotation.category)
   const statusMeta = getStatusMeta(mode, annotation.status)
 
+  const handleCardClick = (e) => {
+    if (!onSeek) return
+    if (e.target.closest('button, select, input, textarea, a, form')) return
+    onSeek(annotation)
+  }
+
   return (
     <div
+      onClick={handleCardClick}
       className={`rounded-lg border p-3.5 transition-colors ${
+        onSeek ? 'cursor-pointer' : ''
+      } ${
         isActive
           ? 'bg-[#18181D] border-[#8B5CF6]/50'
           : 'bg-[#111114] border-[#27272F] hover:border-[#3F3F46]'
