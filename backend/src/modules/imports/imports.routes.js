@@ -9,6 +9,9 @@ import {
   getImportJob,
   importRssEpisode,
   importRssEpisodeSchema,
+  importRssBatch,
+  importRssBatchSchema,
+  inspectSource,
   listWorkspaceImports,
   previewRss,
   previewRssSchema,
@@ -18,6 +21,13 @@ import {
 const router = Router()
 const importLimiter = createRateLimiter({ windowMs: 60_000, max: 20 })
 
+router.post(
+  '/imports/inspect',
+  requireAuth,
+  importLimiter,
+  validate(previewRssSchema),
+  inspectSource
+)
 router.post(
   '/imports/rss/preview',
   requireAuth,
@@ -31,6 +41,13 @@ router.post(
   importLimiter,
   validate(importRssEpisodeSchema),
   importRssEpisode
+)
+router.post(
+  '/imports/rss/batch',
+  requireAuth,
+  importLimiter,
+  validate(importRssBatchSchema),
+  importRssBatch
 )
 router.post(
   '/imports',

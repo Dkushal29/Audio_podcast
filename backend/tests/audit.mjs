@@ -8,8 +8,12 @@ const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:8084/api'
 
 async function run() {
   console.log('A. Testing Prisma legacy INSIGHT/REVISION -> NOTE migration...')
-  const user = await prisma.user.findFirst()
-  const ws = await prisma.workspace.findFirst({ where: { mode: 'STUDY' } })
+  const ws = await prisma.workspace.findFirst({
+    where: { mode: 'STUDY' },
+    orderBy: { createdAt: 'desc' },
+    include: { owner: true },
+  })
+  const user = ws?.owner || (await prisma.user.findFirst())
   assert.ok(user && ws, 'Run e2e.mjs first to populate test user & workspace')
 
   const ep = await prisma.episode.create({

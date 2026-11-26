@@ -18,6 +18,7 @@ import { Badge } from '../components/ui/Badge'
 import { useEchoStore } from '../store/useEchoStore'
 import { getModeConfig } from '../config/modeConfig'
 import { formatTime } from '../utils/time'
+import { extractYouTubeVideoId, getYouTubeThumbnailUrl } from '../utils/youtube'
 
 export function RecordingsPage() {
   const navigate = useNavigate()
@@ -41,7 +42,11 @@ export function RecordingsPage() {
   const modeRecordings = useMemo(() => {
     const filtered = recordings.filter((r) => {
       if (r.mode !== mode) return false
-      if (sourceFilter !== 'ALL' && r.sourceType !== sourceFilter) return false
+      if (sourceFilter === 'YOUTUBE') {
+        if (!extractYouTubeVideoId(r.sourceUrl)) return false
+      } else if (sourceFilter !== 'ALL' && r.sourceType !== sourceFilter) {
+        return false
+      }
       if (!query.trim()) return true
       const q = query.toLowerCase()
       return (
@@ -127,6 +132,7 @@ export function RecordingsPage() {
             {[
               { id: 'ALL', label: 'All' },
               { id: 'UPLOAD', label: 'Audio' },
+              { id: 'YOUTUBE', label: 'YouTube' },
               { id: 'EXTERNAL_LINK', label: 'External' },
             ].map((item) => (
               <button
@@ -199,6 +205,8 @@ export function RecordingsPage() {
                 (a) => a.recordingId === rec.id
               ).length
               const isExternal = rec.sourceType === 'EXTERNAL_LINK'
+              const ytId = extractYouTubeVideoId(rec.sourceUrl)
+              const ytThumb = getYouTubeThumbnailUrl(ytId)
               return (
                 <Card
                   key={rec.id}
@@ -207,6 +215,13 @@ export function RecordingsPage() {
                   className="p-5 cursor-pointer flex flex-col justify-between gap-4"
                 >
                   <div className="space-y-3">
+                    {ytThumb && (
+                      <img
+                        src={ytThumb}
+                        alt={rec.title}
+                        className="w-full h-32 object-cover rounded-lg border border-[#27272F]"
+                      />
+                    )}
                     <div className="flex items-start justify-between gap-3">
                       <div
                         className={`w-10 h-10 rounded-lg border flex items-center justify-center shrink-0 ${cfg.accentBg} ${cfg.accentBorder} ${cfg.accentText}`}
@@ -218,10 +233,12 @@ export function RecordingsPage() {
                           {isExternal ? (
                             <>
                               <ExternalLink className="w-2.5 h-2.5" />
-                              External
+                              External Link
                             </>
+                          ) : rec.sourceUrl ? (
+                            'Imported Audio'
                           ) : (
-                            'Audio'
+                            'Uploaded Audio'
                           )}
                         </span>
                         <span className="inline-flex items-center gap-1 font-mono-time text-xs text-[#F4F4F7] bg-[#08080B] border border-[#22222B] px-2 py-0.5 rounded">

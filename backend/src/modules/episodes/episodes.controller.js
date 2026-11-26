@@ -1,10 +1,14 @@
 import fs from 'fs'
 import path from 'path'
+import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { env } from '../../config/env.js'
 import { prisma } from '../../config/prisma.js'
 import { AppError, asyncHandler } from '../../utils/errors.js'
 import { storage } from '../../utils/storage.js'
+import { canonicalizeExternalMediaUrl } from '../../utils/youtube.js'
+import { emitWorkspaceEvent } from '../../sockets/index.js'
 import {
   ALL_ROLES,
   assertEpisodeMember,
@@ -86,12 +90,14 @@ export const createExternalEpisode = asyncHandler(async (req, res) => {
     throw new AppError(400, 'Only http/https URLs are supported.', 'INVALID_URL')
   }
 
+  const canonical = canonicalizeExternalMediaUrl(body.sourceUrl)
+
   if (body.reuseExisting) {
     const existing = await prisma.episode.findFirst({
       where: {
         workspaceId: body.workspaceId,
         sourceType: 'EXTERNAL_LINK',
-        sourceUrl: body.sourceUrl,
+        sourceUrl: canonical.url,
       },
       include: {
         uploader: { select: { id: true, name: true, avatarColor: true } },
@@ -99,9 +105,16 @@ export const createExternalEpisode = asyncHandler(async (req, res) => {
       },
     })
     if (existing) {
-      return res.json({ episode: existing, reused: true })
+      return res.json({ episode: existing, reused: true, provider: canonical.provider })
     }
   }
+
+  const resolvedTags = Array.from(
+    new Set([
+      ...(body.tags || []),
+      ...(canonical.provider === 'YOUTUBE' ? ['youtube'] : []),
+    ])
+  )
 
   const episode = await prisma.episode.create({
     data: {
@@ -111,9 +124,9 @@ export const createExternalEpisode = asyncHandler(async (req, res) => {
       title: body.title.trim(),
       description: body.description.trim(),
       sourceType: 'EXTERNAL_LINK',
-      sourceUrl: body.sourceUrl,
+      sourceUrl: canonical.url,
       duration: body.duration || 0,
-      tags: body.tags,
+      tags: resolvedTags,
     },
     include: {
       uploader: { select: { id: true, name: true, avatarColor: true } },
@@ -134,7 +147,9 @@ export const createExternalEpisode = asyncHandler(async (req, res) => {
     })
   }
 
-  res.status(201).json({ episode, reused: false })
+  emitWorkspaceEvent(body.workspaceId, 'workspace:episode_created', { episode })
+
+  res.status(201).json({ episode, reused: false, provider: canonical.provider })
 })
 
 export const uploadEpisode = asyncHandler(async (req, res) => {
@@ -253,10 +268,57 @@ export const getEpisode = asyncHandler(async (req, res) => {
         },
         orderBy: { createdAt: 'desc' },
       },
+      bookmarks: {
+        include: {
+          user: { select: { id: true, name: true, avatarColor: true } },
+        },
+        orderBy: { timestamp: 'asc' },
+      },
     },
   })
 
   res.json({ episode: fullEpisode, myRole: membership.role })
+})
+
+export const getEpisodeAudioUrl = asyncHandler(async (req, res) => {
+  const { episode } = await assertEpisodeMember(
+    req.params.id,
+    req.user.id,
+    ALL_ROLES
+  )
+
+  if (episode.sourceType === 'EXTERNAL_LINK' || !episode.audioKey) {
+    throw new AppError(
+      400,
+      'This recording is an external media link and does not have a hosted audio stream.',
+      'EXTERNAL_LINK_NO_LOCAL_AUDIO'
+    )
+  }
+
+  const exists = await storage.exists(episode.audioKey)
+  if (!exists) {
+    throw new AppError(404, 'Audio file not found in storage.', 'AUDIO_MISSING')
+  }
+
+  const expiresIn = 900 // 15 minutes
+  const playbackToken = jwt.sign(
+    {
+      sub: req.user.id,
+      purpose: 'audio_stream',
+      episodeId: episode.id,
+    },
+    env.jwtSecret,
+    { expiresIn }
+  )
+
+  const requestOrigin = req.get('host')
+    ? `${req.protocol}://${req.get('host')}`
+    : env.publicBaseUrl
+
+  res.json({
+    url: `${requestOrigin}/api/episodes/${episode.id}/audio?token=${encodeURIComponent(playbackToken)}`,
+    expiresIn,
+  })
 })
 
 export const streamEpisodeAudio = asyncHandler(async (req, res) => {
@@ -306,7 +368,8 @@ export const streamEpisodeAudio = asyncHandler(async (req, res) => {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
-      'Content-Type': episode.mimeType,
+      'Content-Type': episode.mimeType || 'audio/mpeg',
+      'Cache-Control': 'private, no-store',
     })
     stream.pipe(res)
   } else {
@@ -314,7 +377,8 @@ export const streamEpisodeAudio = asyncHandler(async (req, res) => {
     res.writeHead(200, {
       'Content-Length': fileSize,
       'Accept-Ranges': 'bytes',
-      'Content-Type': episode.mimeType,
+      'Content-Type': episode.mimeType || 'audio/mpeg',
+      'Cache-Control': 'private, no-store',
     })
     stream.pipe(res)
   }

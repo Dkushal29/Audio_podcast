@@ -24,8 +24,17 @@ export function PlaylistCard({ playlist, recordingCount, onSelect }) {
             <ListMusic className="w-4 h-4" />
           </div>
           <Badge tone={isCreator ? 'primary' : 'cyan'}>
-            {recordingCount ?? playlist.recordingIds.length}{' '}
-            {isCreator ? 'Episodes' : 'Lectures'}
+            {(() => {
+              const count = recordingCount ?? playlist.recordingIds.length
+              const unit = isCreator
+                ? count === 1
+                  ? 'Episode'
+                  : 'Episodes'
+                : count === 1
+                  ? 'Lecture'
+                  : 'Lectures'
+              return `${count} ${unit}`
+            })()}
           </Badge>
         </div>
 

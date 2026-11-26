@@ -19,15 +19,17 @@ export function TimelineMarker({
       onClick={() => onSelect?.(annotation)}
       style={{ left: `${percent}%` }}
       title={`${formatTime(annotation.timestamp)} • ${cat.label}: ${annotation.content}`}
-      className={`group absolute -translate-x-1/2 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center cursor-pointer focus:outline-none`}
+      className="group absolute -translate-x-1/2 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center cursor-pointer rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/60"
     >
       <span
-        className={`w-3 h-3 rounded-full border-2 border-[#09090B] transition-transform duration-150 ${
-          isActive ? 'scale-125 ring-2 ring-white/40' : 'group-hover:scale-125'
+        className={`w-3.5 h-3.5 rounded-full border-2 border-[#08080B] transition-transform duration-150 shadow-sm ${
+          isActive
+            ? 'scale-125 ring-2 ring-white/60'
+            : 'group-hover:scale-125 group-hover:ring-2 group-hover:ring-white/30'
         }`}
         style={{ backgroundColor: cat.color }}
       />
-      <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 px-2 py-1 rounded bg-[#18181D] border border-[#27272F] text-[10px] text-[#F4F4F5] whitespace-nowrap shadow-lg">
+      <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 px-2 py-1 rounded-md bg-[#181820] border border-[#22222B] text-[10px] font-medium text-[#F4F4F7] whitespace-nowrap shadow-xl">
         {formatTime(annotation.timestamp)} · {cat.label}
       </span>
     </button>

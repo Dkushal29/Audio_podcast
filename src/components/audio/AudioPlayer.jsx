@@ -36,6 +36,7 @@ export function AudioPlayer({
   onStartHighlight,
   onStopHighlight,
   onCancelHighlight,
+  onRetryAudio,
 }) {
   const wsRef = useRef(null)
   const pendingSeekRef = useRef(null)
@@ -173,6 +174,7 @@ export function AudioPlayer({
           wsRef.current?.play()
           onSelectClip?.(clip)
         }}
+        onRetryAudio={onRetryAudio}
       />
 
       {clipRange && (
@@ -198,7 +200,7 @@ export function AudioPlayer({
           <button
             type="button"
             onClick={() => handleSkip(-5)}
-            className="p-2 rounded-lg text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-[#18181D] transition-colors cursor-pointer"
+            className="p-2 rounded-lg text-[#A1A1B0] hover:text-[#F4F4F7] hover:bg-[#16161D] border border-transparent hover:border-[#22222B] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
             title="Back 5s"
           >
             <RotateCcw className="w-4 h-4" />
@@ -207,10 +209,10 @@ export function AudioPlayer({
           <button
             type="button"
             onClick={handleTogglePlay}
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${
               mode === 'study'
-                ? 'bg-[#22D3EE] hover:bg-[#06B6D4] text-[#09090B]'
-                : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white'
+                ? 'bg-[#22D3EE] hover:bg-[#06B6D4] text-[#070709] shadow-sm'
+                : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white shadow-sm'
             }`}
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >
@@ -224,7 +226,7 @@ export function AudioPlayer({
           <button
             type="button"
             onClick={() => handleSkip(5)}
-            className="p-2 rounded-lg text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-[#18181D] transition-colors cursor-pointer"
+            className="p-2 rounded-lg text-[#A1A1B0] hover:text-[#F4F4F7] hover:bg-[#16161D] border border-transparent hover:border-[#22222B] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
             title="Forward 5s"
           >
             <RotateCw className="w-4 h-4" />
@@ -302,17 +304,20 @@ export function AudioPlayer({
               <button
                 key={ch.id}
                 type="button"
+                title={`${formatTime(ch.startTime)} — ${ch.title}`}
                 onClick={() => {
                   wsRef.current?.setTime(ch.startTime)
                   setCurrentTime(ch.startTime)
                 }}
-                className={`shrink-0 px-2.5 py-1 rounded-md text-xs border transition-colors cursor-pointer ${
+                className={`shrink-0 max-w-[180px] truncate px-2.5 py-1 rounded-md text-xs border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40 ${
                   isCurrent
-                    ? 'bg-[#18181D] border-[#3F3F46] text-[#F4F4F5]'
-                    : 'bg-[#09090B] border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5]'
+                    ? mode === 'study'
+                      ? 'bg-[#16161D] border-[#22D3EE]/50 text-[#F4F4F7]'
+                      : 'bg-[#16161D] border-[#8B5CF6]/55 text-[#F4F4F7]'
+                    : 'bg-[#08080B] border-[#22222B] text-[#A1A1B0] hover:border-[#343442] hover:text-[#F4F4F7]'
                 }`}
               >
-                <span className="font-mono text-[10px] text-[#71717A] mr-1.5">
+                <span className="font-mono-time text-[10px] text-[#8A8A9A] mr-1.5">
                   {formatTime(ch.startTime)}
                 </span>
                 {ch.title}

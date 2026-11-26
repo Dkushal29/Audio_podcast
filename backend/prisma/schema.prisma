@@ -46,6 +46,20 @@ enum EpisodeSourceType {
 
 enum ImportJobStatus {
   QUEUED
+  VALIDATING
+  FETCHING
+  DOWNLOADING
+  EXTRACTING
+  PROCESSING
+  UPLOADING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum TranscriptionStatus {
+  PENDING
+  QUEUED
   PROCESSING
   COMPLETED
   FAILED
@@ -72,6 +86,7 @@ model User {
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsActed    Notification[] @relation("NotificationActor")
   importJobs      ImportJob[]
+  transcripts     Transcript[]
 }
 
 model Workspace {
@@ -88,6 +103,7 @@ model Workspace {
   episodes  Episode[]
   playlists Playlist[]
   importJobs ImportJob[]
+  transcripts Transcript[]
 
   @@index([ownerId])
   @@index([mode])
@@ -150,6 +166,7 @@ model Episode {
   chapters         Chapter[]
   playlistEpisodes PlaylistEpisode[]
   bookmarks        Bookmark[]
+  transcript       Transcript?
 
   @@index([workspaceId])
   @@index([showId])
@@ -275,8 +292,8 @@ model Notification {
   type         String   @default("QUESTION_ANSWERED")
   workspaceId  String   @db.Uuid
   episodeId    String   @db.Uuid
-  annotationId String   @db.Uuid
-  replyId      String   @unique @db.Uuid
+  annotationId String?  @db.Uuid
+  replyId      String?  @unique @db.Uuid
   message      String
   isRead       Boolean  @default(false)
   createdAt    DateTime @default(now())
@@ -308,4 +325,33 @@ model ImportJob {
 
   @@index([workspaceId, status])
   @@index([userId, createdAt])
+}
+
+model Transcript {
+  id               String              @id @default(uuid()) @db.Uuid
+  episodeId        String              @unique @db.Uuid
+  workspaceId      String              @db.Uuid
+  requestedById    String              @db.Uuid
+  provider         String              @default("deepgram")
+  model            String              @default("nova-2")
+  language         String              @default("en")
+  detectedLanguage String?
+  status           TranscriptionStatus @default(QUEUED)
+  fullText         String              @default("")
+  segments         Json?
+  speakers         Json?
+  settings         Json?
+  confidence       Float?
+  retryCount       Int                 @default(0)
+  error            String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  completedAt      DateTime?
+
+  episode     Episode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedBy User      @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([episodeId])
 }

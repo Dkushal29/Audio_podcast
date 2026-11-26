@@ -3,6 +3,7 @@ import cors from 'cors'
 import { env } from './config/env.js'
 import { prisma } from './config/prisma.js'
 import { errorHandler } from './middleware/errorHandler.js'
+import { createRateLimiter } from './middleware/rateLimit.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import usersRoutes from './modules/users/users.routes.js'
 import workspacesRoutes from './modules/workspaces/workspaces.routes.js'
@@ -15,9 +16,12 @@ import playlistsRoutes from './modules/playlists/playlists.routes.js'
 import rssRoutes from './modules/rss/rss.routes.js'
 import notificationsRoutes from './modules/notifications/notifications.routes.js'
 import importsRoutes from './modules/imports/imports.routes.js'
+import transcriptionsRoutes from './modules/transcriptions/transcriptions.routes.js'
+import bookmarksRoutes from './modules/bookmarks/bookmarks.routes.js'
 
 export function createApp() {
   const app = express()
+  app.set('trust proxy', 1)
 
   app.use(
     cors({
@@ -34,6 +38,7 @@ export function createApp() {
     })
   )
   app.use(express.json({ limit: '2mb' }))
+  app.use('/api', createRateLimiter({ windowMs: 60_000, max: 300 }))
 
   app.get('/api/health', async (_req, res) => {
     try {
@@ -52,6 +57,21 @@ export function createApp() {
     }
   })
 
+  app.get('/api/ready', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      res.json({
+        ready: true,
+        storageDriver: env.storageDriver,
+      })
+    } catch {
+      res.status(503).json({
+        ready: false,
+        storageDriver: env.storageDriver,
+      })
+    }
+  })
+
   app.use('/api/auth', authRoutes)
   app.use('/api/users', usersRoutes)
   app.use('/api/workspaces', workspacesRoutes)
@@ -64,6 +84,8 @@ export function createApp() {
   app.use('/api', rssRoutes)
   app.use('/api/notifications', notificationsRoutes)
   app.use('/api', importsRoutes)
+  app.use('/api', transcriptionsRoutes)
+  app.use('/api', bookmarksRoutes)
 
   app.use((_req, res) => {
     res.status(404).json({

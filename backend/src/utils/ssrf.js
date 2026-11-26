@@ -128,7 +128,7 @@ export async function assertSafePublicUrl(rawUrl) {
   }
 }
 
-function openPinnedRequest(parsed, pinnedIp, pinnedFamily, timeoutMs) {
+function openPinnedRequest(parsed, pinnedIp, pinnedFamily, timeoutMs, method = 'GET') {
   const lib = parsed.protocol === 'https:' ? https : http
   return new Promise((resolve, reject) => {
     const req = lib.request(
@@ -137,7 +137,7 @@ function openPinnedRequest(parsed, pinnedIp, pinnedFamily, timeoutMs) {
         hostname: parsed.hostname,
         port: parsed.port || undefined,
         path: `${parsed.pathname}${parsed.search}`,
-        method: 'GET',
+        method,
         headers: {
           'User-Agent': 'EchoSpace-Importer/1.0',
           Host: parsed.host,
@@ -165,12 +165,76 @@ function openPinnedRequest(parsed, pinnedIp, pinnedFamily, timeoutMs) {
   })
 }
 
-async function resolveSafeStream(rawUrl, { maxBytes, timeoutMs, maxRedirects }) {
+function mapRemoteHttpError(status) {
+  if (status === 401 || status === 403) {
+    return new AppError(
+      403,
+      'The audio source denied access. Check whether the audio is publicly accessible.',
+      'ACCESS_DENIED'
+    )
+  }
+  if (status === 404 || status === 410) {
+    return new AppError(
+      404,
+      'The audio URL could not be found. Check that the link is still valid.',
+      'REMOTE_NOT_FOUND'
+    )
+  }
+  return new AppError(502, `Remote server returned HTTP ${status}.`, 'REMOTE_HTTP_ERROR')
+}
+
+export function validateAudioContentType(contentTypeHeader) {
+  const ct = String(contentTypeHeader || '').split(';')[0].trim().toLowerCase()
+  if (!ct) return { ok: true, kind: 'UNKNOWN' }
+
+  if (ct === 'text/html' || ct === 'application/xhtml+xml') {
+    throw new AppError(
+      400,
+      'This URL points to a webpage, not a direct audio file. Import a direct audio URL or podcast RSS feed instead.',
+      'UNSUPPORTED_WEBPAGE'
+    )
+  }
+  if (
+    ct === 'application/rss+xml' ||
+    ct === 'application/atom+xml' ||
+    ct === 'application/xml' ||
+    ct === 'text/xml'
+  ) {
+    return { ok: false, kind: 'RSS_FEED', contentType: ct }
+  }
+  if (
+    ct.startsWith('audio/') ||
+    ct === 'application/ogg' ||
+    ct === 'application/octet-stream' ||
+    ct === 'binary/octet-stream' ||
+    ct === 'video/webm' ||
+    ct === 'video/mp4' ||
+    ct === 'video/quicktime' ||
+    ct === 'video/x-matroska'
+  ) {
+    return {
+      ok: true,
+      kind: ct.startsWith('video/') ? 'DIRECT_VIDEO' : 'DIRECT_AUDIO',
+      contentType: ct,
+    }
+  }
+
+  throw new AppError(
+    400,
+    'The retrieved file is not a supported audio format. Supported formats: MP3, WAV, M4A, OGG, FLAC, AAC and WebM.',
+    'INVALID_AUDIO_FORMAT'
+  )
+}
+
+async function resolveSafeStream(
+  rawUrl,
+  { maxBytes, timeoutMs, maxRedirects, method = 'GET' }
+) {
   let currentUrl = rawUrl
 
   for (let hop = 0; hop <= maxRedirects; hop += 1) {
     const { parsed, pinnedIp, pinnedFamily } = await assertSafePublicUrl(currentUrl)
-    const res = await openPinnedRequest(parsed, pinnedIp, pinnedFamily, timeoutMs)
+    const res = await openPinnedRequest(parsed, pinnedIp, pinnedFamily, timeoutMs, method)
     const status = res.statusCode || 0
 
     if (status >= 300 && status < 400) {
@@ -185,7 +249,7 @@ async function resolveSafeStream(rawUrl, { maxBytes, timeoutMs, maxRedirects }) 
 
     if (status < 200 || status >= 300) {
       res.resume()
-      throw new AppError(502, `Remote server returned HTTP ${status}.`, 'REMOTE_HTTP_ERROR')
+      throw mapRemoteHttpError(status)
     }
 
     const contentLength = Number(res.headers['content-length'] || 0)
@@ -193,15 +257,44 @@ async function resolveSafeStream(rawUrl, { maxBytes, timeoutMs, maxRedirects }) 
       res.destroy()
       throw new AppError(
         413,
-        `Remote file exceeds maximum allowed size (${Math.round(maxBytes / (1024 * 1024))} MB).`,
+        'The audio file exceeds the maximum import size.',
         'FILE_TOO_LARGE'
       )
     }
 
-    return { res, finalUrl: currentUrl, contentLength }
+    return {
+      res,
+      finalUrl: currentUrl,
+      contentLength,
+      contentType: res.headers['content-type'] || '',
+    }
   }
 
   throw new AppError(502, 'Too many redirects.', 'TOO_MANY_REDIRECTS')
+}
+
+export async function safeInspectRemoteHeaders(
+  rawUrl,
+  { maxBytes = 100 * 1024 * 1024, timeoutMs = 8000, maxRedirects = 5 } = {}
+) {
+  try {
+    const { res, finalUrl, contentLength, contentType } = await resolveSafeStream(
+      rawUrl,
+      { maxBytes, timeoutMs, maxRedirects, method: 'HEAD' }
+    )
+    res.resume()
+    return { finalUrl, contentLength, contentType }
+  } catch (err) {
+    if (err?.code === 'REMOTE_HTTP_ERROR' && err.message.includes('405')) {
+      const { res, finalUrl, contentLength, contentType } = await resolveSafeStream(
+        rawUrl,
+        { maxBytes, timeoutMs, maxRedirects, method: 'GET' }
+      )
+      res.destroy()
+      return { finalUrl, contentLength, contentType }
+    }
+    throw err
+  }
 }
 
 export async function safeFetchText(
@@ -224,6 +317,32 @@ export async function safeFetchText(
   return Buffer.concat(chunks).toString('utf8')
 }
 
+export async function safeFetchHtmlSnippet(
+  rawUrl,
+  { maxBytes = 256 * 1024, timeoutMs = 8000, maxRedirects = 5 } = {}
+) {
+  const { res, finalUrl, contentType } = await resolveSafeStream(rawUrl, {
+    maxBytes: 20 * 1024 * 1024,
+    timeoutMs,
+    maxRedirects,
+  })
+  const chunks = []
+  let total = 0
+  for await (const chunk of res) {
+    chunks.push(chunk)
+    total += chunk.length
+    if (total >= maxBytes) {
+      res.destroy()
+      break
+    }
+  }
+  return {
+    html: Buffer.concat(chunks).toString('utf8'),
+    finalUrl,
+    contentType,
+  }
+}
+
 export async function safeDownloadToFile(
   rawUrl,
   destPath,
@@ -231,15 +350,28 @@ export async function safeDownloadToFile(
     maxBytes = 100 * 1024 * 1024,
     timeoutMs = 30000,
     maxRedirects = 5,
+    validateAudio = false,
     onProgress,
     shouldCancel,
   } = {}
 ) {
-  const { res, contentLength } = await resolveSafeStream(rawUrl, {
+  const { res, contentLength, contentType } = await resolveSafeStream(rawUrl, {
     maxBytes,
     timeoutMs,
     maxRedirects,
   })
+
+  if (validateAudio) {
+    const ctCheck = validateAudioContentType(contentType)
+    if (!ctCheck.ok && ctCheck.kind === 'RSS_FEED') {
+      res.destroy()
+      throw new AppError(
+        400,
+        'This URL points to an RSS or XML feed, not a direct audio file. Click Preview RSS to import an episode.',
+        'RSS_FEED_DETECTED'
+      )
+    }
+  }
 
   const writeStream = fs.createWriteStream(destPath)
   let downloaded = 0
@@ -255,7 +387,7 @@ export async function safeDownloadToFile(
       if (downloaded > maxBytes) {
         res.destroy()
         writeStream.destroy()
-        throw new AppError(413, 'Remote audio exceeds maximum allowed upload size.', 'FILE_TOO_LARGE')
+        throw new AppError(413, 'The audio file exceeds the maximum import size.', 'FILE_TOO_LARGE')
       }
       writeStream.write(chunk)
       if (onProgress && contentLength > 0) {

@@ -7,7 +7,11 @@ import {
   MANAGE_ROLES,
   WRITE_ROLES,
 } from '../../middleware/workspaceAuth.js'
-import { emitEpisodeEvent } from '../../sockets/index.js'
+import {
+  emitEpisodeEvent,
+  emitUserEvent,
+  emitWorkspaceEvent,
+} from '../../sockets/index.js'
 
 const MODE_CATEGORIES = {
   STUDY: ['QUESTION', 'NOTE'],
@@ -26,6 +30,7 @@ export const createAnnotationSchema = z.object({
     'SUGGESTION',
   ]),
   content: z.string().min(1).max(4000),
+  shareToWorkspace: z.boolean().optional().default(false),
 })
 
 export const updateAnnotationSchema = z.object({
@@ -103,6 +108,76 @@ export const createAnnotation = asyncHandler(async (req, res) => {
   })
 
   emitEpisodeEvent(episode.id, 'annotation:created', { annotation })
+  emitWorkspaceEvent(episode.workspaceId, 'workspace:annotation_created', {
+    episodeId: episode.id,
+    annotation,
+  })
+
+  // Notify workspace teammates on shared moments, questions, or @mentions
+  const textLower = annotation.content.toLowerCase()
+  const isBroadcast =
+    Boolean(req.body.shareToWorkspace) ||
+    textLower.includes('@team') ||
+    textLower.includes('@everyone')
+  const isQuestion = normalizedCategory === 'QUESTION'
+  const hasAtMention = /@[a-z0-9._-]+/i.test(annotation.content)
+
+  if (isBroadcast || isQuestion || hasAtMention) {
+    const members = await prisma.workspaceMember.findMany({
+      where: {
+        workspaceId: episode.workspaceId,
+        userId: { not: req.user.id },
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+    })
+
+    const recipients = members.filter((m) => {
+      if (isBroadcast || isQuestion) return true
+      const nameToken = `@${(m.user?.name || '').toLowerCase().replace(/\s+/g, '')}`
+      const firstToken = `@${(m.user?.name || '').toLowerCase().split(/\s+/)[0]}`
+      const emailPrefix = `@${(m.user?.email || '').toLowerCase().split('@')[0]}`
+      return (
+        (nameToken.length > 1 && textLower.includes(nameToken)) ||
+        (firstToken.length > 1 && textLower.includes(firstToken)) ||
+        (emailPrefix.length > 1 && textLower.includes(emailPrefix))
+      )
+    })
+
+    const notifType = isBroadcast
+      ? 'VIDEO_MOMENT_SHARED'
+      : isQuestion
+        ? 'QUESTION_ASKED'
+        : 'MENTIONED'
+    const notifMessage = isBroadcast
+      ? `${req.user.name} shared a moment in "${episode.title}".`
+      : isQuestion
+        ? `${req.user.name} asked a question in "${episode.title}".`
+        : `${req.user.name} mentioned you in "${episode.title}".`
+
+    for (const member of recipients.slice(0, 20)) {
+      try {
+        const notification = await prisma.notification.create({
+          data: {
+            recipientId: member.userId,
+            actorId: req.user.id,
+            type: notifType,
+            workspaceId: episode.workspaceId,
+            episodeId: episode.id,
+            annotationId: annotation.id,
+            message: notifMessage,
+          },
+          include: {
+            actor: { select: { id: true, name: true, avatarColor: true } },
+          },
+        })
+        emitUserEvent(member.userId, 'notification:created', { notification })
+      } catch {
+        // Never fail annotation creation if a notification write fails
+      }
+    }
+  }
 
   res.status(201).json({ annotation })
 })

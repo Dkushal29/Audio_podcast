@@ -2,7 +2,11 @@ import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import { env } from '../config/env.js'
 import { prisma } from '../config/prisma.js'
-import { assertEpisodeMember, ALL_ROLES } from '../middleware/workspaceAuth.js'
+import {
+  assertEpisodeMember,
+  assertWorkspaceMember,
+  ALL_ROLES,
+} from '../middleware/workspaceAuth.js'
 
 let ioInstance = null
 
@@ -66,6 +70,27 @@ export function initSocketServer(httpServer) {
         socket.leave(`episode:${episodeId}`)
       }
     })
+
+    socket.on('workspace:join', async ({ workspaceId } = {}, ack) => {
+      try {
+        if (!workspaceId) {
+          ack?.({ ok: false, error: 'workspaceId is required' })
+          return
+        }
+        await assertWorkspaceMember(workspaceId, socket.user.id, ALL_ROLES)
+        const room = `workspace:${workspaceId}`
+        await socket.join(room)
+        ack?.({ ok: true, room })
+      } catch (err) {
+        ack?.({ ok: false, error: err.message || 'Forbidden' })
+      }
+    })
+
+    socket.on('workspace:leave', ({ workspaceId } = {}) => {
+      if (workspaceId) {
+        socket.leave(`workspace:${workspaceId}`)
+      }
+    })
   })
 
   ioInstance = io
@@ -75,6 +100,11 @@ export function initSocketServer(httpServer) {
 export function emitEpisodeEvent(episodeId, eventName, payload) {
   if (!ioInstance) return
   ioInstance.to(`episode:${episodeId}`).emit(eventName, payload)
+}
+
+export function emitWorkspaceEvent(workspaceId, eventName, payload) {
+  if (!ioInstance || !workspaceId) return
+  ioInstance.to(`workspace:${workspaceId}`).emit(eventName, payload)
 }
 
 export function emitUserEvent(userId, eventName, payload) {

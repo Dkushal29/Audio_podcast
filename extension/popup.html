@@ -1,99 +1,142 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EchoSpace Clipper</title>
+    <title>EchoSpace Companion</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <div class="container">
+    <div id="app" class="container">
       <header class="header">
         <div class="brand">
-          <span class="dot"></span>
-          <span>EchoSpace</span>
+          <div class="logo-dot"></div>
+          <div>
+            <h1>EchoSpace</h1>
+            <p class="subtitle">Listen. Understand. Discuss.</p>
+          </div>
         </div>
-        <div class="header-actions">
-          <button id="options-btn" class="link-btn" type="button">Config</button>
-          <button id="logout-btn" class="link-btn hidden" type="button">Sign Out</button>
-        </div>
+        <button id="options-btn" class="icon-btn" title="Extension Settings">
+          ⚙
+        </button>
       </header>
 
       <!-- Auth View -->
-      <section id="auth-view" class="card">
-        <h1>Sign in to EchoSpace</h1>
-        <p class="muted">Connect to save timestamped notes to your workspace.</p>
+      <section id="auth-view" class="panel hidden">
+        <h2>Sign in to EchoSpace</h2>
+        <p class="muted">
+          Annotate YouTube videos &amp; web media and sync directly with your workspace.
+        </p>
         <form id="login-form" class="stack">
-          <label class="field">
-            <span>Email</span>
-            <input id="login-email" type="email" required placeholder="you@domain.com" />
+          <label>
+            Email
+            <input type="email" id="login-email" required placeholder="you@example.com" />
           </label>
-          <label class="field">
-            <span>Password</span>
-            <input id="login-password" type="password" required placeholder="••••••••" />
+          <label>
+            Password
+            <input type="password" id="login-password" required placeholder="••••••••" />
           </label>
-          <p id="login-error" class="error hidden"></p>
-          <button id="login-submit" type="submit" class="btn btn-primary">
-            Sign In
-          </button>
+          <p id="auth-error" class="error hidden"></p>
+          <button type="submit" class="btn-primary">Sign In</button>
         </form>
       </section>
 
       <!-- Main Capture View -->
-      <section id="capture-view" class="stack hidden">
+      <section id="capture-view" class="panel hidden">
         <div class="user-bar">
-          <span id="user-name" class="user-name"></span>
-          <div class="mode-toggle">
-            <button id="mode-study" type="button" class="mode-btn active">Study</button>
-            <button id="mode-creator" type="button" class="mode-btn">Creator</button>
-          </div>
+          <span id="user-name" class="user-pill"></span>
+          <button id="logout-btn" class="link-btn">Sign out</button>
         </div>
 
-        <div class="card stack-sm">
-          <div class="row-between">
-            <span class="label">Detected Media</span>
-            <button id="refresh-media" type="button" class="link-btn">Refresh</button>
-          </div>
-          <p id="media-title" class="media-title">Inspecting active tab...</p>
-          <p id="media-url" class="muted truncate"></p>
-          <div id="media-status" class="status-pill"></div>
+        <div class="mode-switch">
+          <button type="button" data-mode="STUDY" class="mode-btn active">
+            Study Mode
+          </button>
+          <button type="button" data-mode="CREATOR" class="mode-btn">
+            Creator Mode
+          </button>
         </div>
 
-        <form id="annotate-form" class="card stack-sm">
-          <label class="field">
-            <span>Workspace</span>
+        <div id="media-status" class="media-card">
+          <div class="media-card-row">
+            <img id="media-thumb" class="media-thumb hidden" alt="Video thumbnail" />
+            <div class="media-info">
+              <div class="media-badges">
+                <span id="provider-badge" class="badge hidden">YouTube</span>
+                <span id="playback-badge" class="badge badge-muted hidden">Paused</span>
+              </div>
+              <p class="media-title" id="media-title">Scanning current tab...</p>
+              <p class="media-meta" id="media-meta"></p>
+            </div>
+          </div>
+          <button type="button" id="refresh-media-btn" class="btn-secondary-sm">
+            Refresh
+          </button>
+        </div>
+
+        <form id="annotate-form" class="stack">
+          <label>
+            Workspace
             <select id="workspace-select" required></select>
           </label>
 
-          <div class="grid-2">
-            <label class="field">
-              <span>Category</span>
+          <div class="quick-actions" role="group" aria-label="Quick actions">
+            <button type="button" data-action="ANNOTATE" class="action-pill active">
+              Annotate
+            </button>
+            <button type="button" data-action="QUESTION" class="action-pill">
+              Ask Question
+            </button>
+            <button type="button" data-action="BOOKMARK" class="action-pill">
+              Bookmark
+            </button>
+            <button type="button" data-action="DISCUSS" class="action-pill">
+              Share Moment
+            </button>
+          </div>
+
+          <div class="row-2">
+            <label id="category-label">
+              Category
               <select id="category-select"></select>
             </label>
-            <label class="field">
-              <span>Timestamp (sec)</span>
-              <input id="timestamp-input" type="number" min="0" step="1" value="0" />
+            <label>
+              Timestamp
+              <input
+                type="text"
+                id="timestamp-input"
+                placeholder="0:00"
+                required
+              />
             </label>
           </div>
 
-          <label class="field">
-            <span>Annotation Note</span>
-            <textarea id="note-input" rows="3" required placeholder="Write a question, insight, or feedback note..."></textarea>
+          <label>
+            <span id="note-label">Annotation</span>
+            <textarea
+              id="note-input"
+              rows="3"
+              placeholder="Write a timestamped note, question, or @teammate mention..."
+            ></textarea>
           </label>
 
           <p id="capture-error" class="error hidden"></p>
-          <div id="capture-success" class="success hidden">
-            <span id="success-text">Saved!</span>
-            <a id="open-app-link" href="#" target="_blank" rel="noopener noreferrer">Open in EchoSpace ↗</a>
-          </div>
+          <p id="capture-success" class="success hidden"></p>
 
-          <button id="save-btn" type="submit" class="btn btn-primary">
-            Save Annotation
-          </button>
+          <div class="actions">
+            <button type="submit" id="save-btn" class="btn-primary">
+              Save Annotation
+            </button>
+            <button type="button" id="open-app-btn" class="btn-secondary">
+              View Video
+            </button>
+            <button type="button" id="open-ws-btn" class="btn-secondary">
+              Workspace
+            </button>
+          </div>
         </form>
       </section>
     </div>
-
     <script src="popup.js"></script>
   </body>
 </html>

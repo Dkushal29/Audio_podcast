@@ -20,8 +20,12 @@ router.get(
     })
 
     // Attach annotation timestamp & episode title for direct navigation
-    const annIds = [...new Set(notifications.map((n) => n.annotationId))]
-    const epIds = [...new Set(notifications.map((n) => n.episodeId))]
+    const annIds = [
+      ...new Set(notifications.map((n) => n.annotationId).filter(Boolean)),
+    ]
+    const epIds = [
+      ...new Set(notifications.map((n) => n.episodeId).filter(Boolean)),
+    ]
 
     const [anns, eps] = await Promise.all([
       prisma.annotation.findMany({

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import { TimelineMarker } from './TimelineMarker'
+import { getAuthToken } from '../../services/api'
 
 export function Waveform({
   audioUrl,
@@ -16,6 +17,7 @@ export function Waveform({
   onFinish,
   onSelectAnnotation,
   onSelectClip,
+  onRetryAudio,
   waveSurferRef: externalRef,
 }) {
   const containerRef = useRef(null)
@@ -32,20 +34,30 @@ export function Waveform({
     setIsLoading(true)
     setLoadError('')
 
-    const accent = mode === 'study' ? '#22D3EE' : '#8B5CF6'
+    const accent = mode === 'study' ? '#22D3EE' : '#A78BFA'
+    const token = getAuthToken()
 
     const ws = WaveSurfer.create({
       container,
-      waveColor: '#3F3F46',
+      waveColor: '#4B4B59',
       progressColor: accent,
-      cursorColor: '#F4F4F5',
+      cursorColor: '#F4F4F7',
       cursorWidth: 2,
-      barWidth: 2,
+      barWidth: 3,
       barGap: 2,
       barRadius: 2,
       height,
       normalize: true,
       url: audioUrl,
+      ...(token
+        ? {
+            fetchParams: {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+          }
+        : {}),
     })
 
     internalWsRef.current = ws
@@ -109,19 +121,28 @@ export function Waveform({
       )}
 
       {/* WaveSurfer canvas */}
-      <div className="relative rounded-lg bg-[#09090B] border border-[#27272F] px-3 py-3 overflow-hidden">
+      <div className="relative rounded-xl bg-[#08080B] border border-[#22222B] px-3.5 py-3.5 overflow-hidden">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#09090B]/80 z-20">
-            <span className="text-xs text-[#A1A1AA] animate-pulse">
+          <div className="absolute inset-0 flex items-center justify-center bg-[#08080B]/85 z-20">
+            <span className="text-xs text-[#A1A1B0] animate-pulse">
               Rendering waveform...
             </span>
           </div>
         )}
         {loadError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#09090B]/90 z-20 px-4 text-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#08080B]/95 z-20 px-4 text-center">
             <span className="text-xs text-rose-400">
               Audio playback error: {loadError}
             </span>
+            {onRetryAudio && (
+              <button
+                type="button"
+                onClick={onRetryAudio}
+                className="px-2.5 py-1 rounded-md bg-[#16161D] border border-[#22222B] text-[11px] font-medium text-[#F4F4F7] hover:border-[#343442] cursor-pointer"
+              >
+                Retry Audio
+              </button>
+            )}
           </div>
         )}
         <div ref={containerRef} className="w-full" />
@@ -129,8 +150,8 @@ export function Waveform({
 
       {/* Annotation & Clip marker track */}
       {(annotations.length > 0 || clips.length > 0) && duration > 0 && (
-        <div className="relative h-6 mt-1.5 rounded bg-[#09090B] border border-[#27272F]/70">
-          <div className="absolute inset-x-0 top-1/2 h-px bg-[#27272F]" />
+        <div className="relative h-7 mt-2 rounded-lg bg-[#08080B] border border-[#22222B]">
+          <div className="absolute inset-x-2 top-1/2 h-px bg-[#2E2E3A]" />
           {clips.map((clip) => {
             const leftPct = Math.max(0, Math.min(98, (clip.startTime / duration) * 100))
             const widthPct = Math.max(

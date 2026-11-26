@@ -18,6 +18,18 @@ export async function requireAuth(req, _res, next) {
     }
 
     const payload = jwt.verify(token, env.jwtSecret)
+
+    // Scoped playback tokens are strictly restricted to streaming their bound episode audio
+    if (payload.purpose === 'audio_stream') {
+      const cleanPath = (req.originalUrl || `${req.baseUrl || ''}${req.path || ''}`).split('?')[0]
+      const expectedSuffix = `/episodes/${payload.episodeId}/audio`
+      const isAudioStreamRoute =
+        req.method === 'GET' && cleanPath.endsWith(expectedSuffix)
+      if (!isAudioStreamRoute) {
+        throw new AppError(401, 'Playback token is not valid for this resource.', 'UNAUTHORIZED')
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
@@ -47,6 +59,18 @@ export async function optionalAuth(req, _res, next) {
     if (!authHeader.startsWith('Bearer ')) return next()
     const token = authHeader.slice(7)
     const payload = jwt.verify(token, env.jwtSecret)
+
+    // Scoped playback tokens are strictly restricted to streaming their bound episode audio
+    if (payload.purpose === 'audio_stream') {
+      const cleanPath = (req.originalUrl || `${req.baseUrl || ''}${req.path || ''}`).split('?')[0]
+      const expectedSuffix = `/episodes/${payload.episodeId}/audio`
+      const isAudioStreamRoute =
+        req.method === 'GET' && cleanPath.endsWith(expectedSuffix)
+      if (!isAudioStreamRoute) {
+        throw new AppError(401, 'Playback token is not valid for this resource.', 'UNAUTHORIZED')
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, name: true, avatarColor: true },

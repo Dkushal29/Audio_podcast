@@ -31,6 +31,7 @@ function normalizeEpisode(ep, mode) {
     authorName: ep.uploader?.name || 'Member',
     tags: ep.tags || [],
     chapters: ep.chapters || [],
+    bookmarks: ep.bookmarks || [],
   }
 }
 
@@ -593,6 +594,55 @@ export const useEchoStore = create(
               ? {
                   ...r,
                   chapters: (r.chapters || []).filter((c) => c.id !== chapterId),
+                }
+              : r
+          ),
+        }))
+      },
+
+      createBookmark: async (episodeId, { timestamp, label = '' }) => {
+        const bookmark = await apiClient.createBookmark(episodeId, {
+          timestamp,
+          label,
+        })
+        get().applySocketBookmarkCreated(episodeId, bookmark)
+        return bookmark
+      },
+
+      deleteBookmark: async (episodeId, bookmarkId) => {
+        await apiClient.deleteBookmark(bookmarkId)
+        get().applySocketBookmarkDeleted(episodeId, bookmarkId)
+      },
+
+      applySocketBookmarkCreated: (episodeId, bookmark) => {
+        if (!bookmark) return
+        set((state) => ({
+          recordings: state.recordings.map((r) =>
+            r.id === episodeId
+              ? {
+                  ...r,
+                  bookmarks: (r.bookmarks || []).some(
+                    (b) => b.id === bookmark.id
+                  )
+                    ? r.bookmarks
+                    : [...(r.bookmarks || []), bookmark].sort(
+                        (a, b) => a.timestamp - b.timestamp
+                      ),
+                }
+              : r
+          ),
+        }))
+      },
+
+      applySocketBookmarkDeleted: (episodeId, bookmarkId) => {
+        set((state) => ({
+          recordings: state.recordings.map((r) =>
+            r.id === episodeId
+              ? {
+                  ...r,
+                  bookmarks: (r.bookmarks || []).filter(
+                    (b) => b.id !== bookmarkId
+                  ),
                 }
               : r
           ),

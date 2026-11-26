@@ -1,287 +1,456 @@
 const MODE_CATEGORIES = {
   STUDY: [
-    { id: 'QUESTION', label: 'Question' },
-    { id: 'NOTE', label: 'Note' },
+    { value: 'QUESTION', label: 'Question' },
+    { value: 'NOTE', label: 'Note' },
+    { value: 'INSIGHT', label: 'Insight' },
+    { value: 'REVISION', label: 'Revision' },
   ],
   CREATOR: [
-    { id: 'FEEDBACK', label: 'Feedback' },
-    { id: 'CORRECTION', label: 'Correction' },
-    { id: 'SUGGESTION', label: 'Suggestion' },
+    { value: 'FEEDBACK', label: 'Feedback' },
+    { value: 'CORRECTION', label: 'Correction' },
+    { value: 'SUGGESTION', label: 'Suggestion' },
   ],
 }
 
-let state = {
+const state = {
   apiBaseUrl: 'http://localhost:8080/api',
   webAppUrl: 'http://localhost:5173',
   token: null,
   user: null,
   mode: 'STUDY',
+  action: 'ANNOTATE',
   workspaces: [],
-  media: null,
+  detectedMedia: null,
+  lastEpisodeId: null,
+  timestampManuallyEdited: false,
 }
 
-const el = (id) => document.getElementById(id)
-
-function formatSec(sec) {
-  const s = Math.max(0, Math.floor(sec || 0))
-  const m = Math.floor(s / 60)
-  const r = s % 60
-  return `${m}:${String(r).padStart(2, '0')}`
+const el = {
+  authView: document.getElementById('auth-view'),
+  captureView: document.getElementById('capture-view'),
+  loginForm: document.getElementById('login-form'),
+  loginEmail: document.getElementById('login-email'),
+  loginPassword: document.getElementById('login-password'),
+  authError: document.getElementById('auth-error'),
+  userName: document.getElementById('user-name'),
+  logoutBtn: document.getElementById('logout-btn'),
+  optionsBtn: document.getElementById('options-btn'),
+  workspaceSelect: document.getElementById('workspace-select'),
+  categoryLabel: document.getElementById('category-label'),
+  categorySelect: document.getElementById('category-select'),
+  timestampInput: document.getElementById('timestamp-input'),
+  noteLabel: document.getElementById('note-label'),
+  noteInput: document.getElementById('note-input'),
+  annotateForm: document.getElementById('annotate-form'),
+  saveBtn: document.getElementById('save-btn'),
+  openAppBtn: document.getElementById('open-app-btn'),
+  openWsBtn: document.getElementById('open-ws-btn'),
+  mediaThumb: document.getElementById('media-thumb'),
+  providerBadge: document.getElementById('provider-badge'),
+  playbackBadge: document.getElementById('playback-badge'),
+  mediaTitle: document.getElementById('media-title'),
+  mediaMeta: document.getElementById('media-meta'),
+  refreshMediaBtn: document.getElementById('refresh-media-btn'),
+  captureError: document.getElementById('capture-error'),
+  captureSuccess: document.getElementById('capture-success'),
 }
 
-async function apiFetch(endpoint, options = {}) {
-  const headers = { ...(options.headers || {}) }
-  if (state.token) headers.Authorization = `Bearer ${state.token}`
-  if (options.body && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json'
+function formatTimestamp(totalSeconds) {
+  const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0))
+  const hours = Math.floor(sec / 3600)
+  const mins = Math.floor((sec % 3600) / 60)
+  const rem = sec % 60
+  if (hours > 0) {
+    return `${hours}:${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`
   }
-  const res = await fetch(`${state.apiBaseUrl}${endpoint}`, {
+  return `${mins}:${String(rem).padStart(2, '0')}`
+}
+
+function parseTimestampInput(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 0
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    return Math.max(0, Number(raw))
+  }
+  const parts = raw.split(':').map((p) => Number(p.trim()))
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return NaN
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  return NaN
+}
+
+async function loadSettings() {
+  const stored = await chrome.storage.local.get([
+    'apiBaseUrl',
+    'webAppUrl',
+    'echospaceToken',
+    'echospaceMode',
+  ])
+  if (stored.apiBaseUrl) state.apiBaseUrl = stored.apiBaseUrl
+  if (stored.webAppUrl) state.webAppUrl = stored.webAppUrl
+  if (stored.echospaceToken) state.token = stored.echospaceToken
+  if (stored.echospaceMode) state.mode = stored.echospaceMode
+}
+
+async function apiFetch(path, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  }
+  if (state.token) {
+    headers.Authorization = `Bearer ${state.token}`
+  }
+  const res = await fetch(`${state.apiBaseUrl}${path}`, {
     ...options,
     headers,
   })
   const data = await res.json().catch(() => ({}))
+  if (res.status === 401 && state.token) {
+    state.token = null
+    state.user = null
+    await chrome.storage.local.remove('echospaceToken')
+    showAuthView('Session expired. Please sign in again.')
+  }
   if (!res.ok) {
     throw new Error(data?.error?.message || `Request failed (${res.status})`)
   }
   return data
 }
 
-function renderCategories() {
+function showAuthView(message = '') {
+  el.authView.classList.remove('hidden')
+  el.captureView.classList.add('hidden')
+  if (message) {
+    el.authError.textContent = message
+    el.authError.classList.remove('hidden')
+  }
+}
+
+function showCaptureView() {
+  el.authView.classList.add('hidden')
+  el.captureView.classList.remove('hidden')
+}
+
+function renderModeButtons() {
+  document.querySelectorAll('.mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.mode === state.mode)
+  })
   const cats = MODE_CATEGORIES[state.mode] || MODE_CATEGORIES.STUDY
-  const select = el('category-select')
-  select.innerHTML = cats
-    .map((c) => `<option value="${c.id}">${c.label}</option>`)
-    .join('')
+  el.categorySelect.textContent = ''
+  cats.forEach((c) => {
+    const opt = document.createElement('option')
+    opt.value = c.value
+    opt.textContent = c.label
+    el.categorySelect.appendChild(opt)
+  })
+}
+
+function renderActionPills() {
+  document.querySelectorAll('.action-pill').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.action === state.action)
+  })
+
+  if (state.action === 'BOOKMARK') {
+    el.categoryLabel.classList.add('hidden')
+    el.noteLabel.textContent = 'Bookmark Label (optional)'
+    el.noteInput.placeholder = 'e.g. Key architecture diagram, Important formula...'
+    el.saveBtn.textContent = 'Save Bookmark'
+  } else if (state.action === 'QUESTION') {
+    el.categoryLabel.classList.remove('hidden')
+    el.categorySelect.value = state.mode === 'STUDY' ? 'QUESTION' : 'FEEDBACK'
+    el.noteLabel.textContent = 'Question for Workspace'
+    el.noteInput.placeholder = 'Ask a timestamped question for your teammates...'
+    el.saveBtn.textContent = 'Post Question'
+  } else if (state.action === 'DISCUSS') {
+    el.categoryLabel.classList.remove('hidden')
+    el.noteLabel.textContent = 'Share Moment with Workspace'
+    el.noteInput.placeholder = 'Share this video moment & notify your workspace (@team)...'
+    el.saveBtn.textContent = 'Share with Workspace'
+  } else {
+    el.categoryLabel.classList.remove('hidden')
+    el.noteLabel.textContent = 'Annotation'
+    el.noteInput.placeholder = 'Write a timestamped note, question, or @teammate mention...'
+    el.saveBtn.textContent = 'Save Annotation'
+  }
 }
 
 function renderWorkspaces() {
-  const select = el('workspace-select')
-  const filtered = state.workspaces.filter((w) => w.mode === state.mode)
+  const filtered = state.workspaces.filter((ws) => ws.mode === state.mode)
   const list = filtered.length > 0 ? filtered : state.workspaces
-
-  if (list.length === 0) {
-    select.innerHTML = '<option value="">No workspaces found</option>'
-    return
-  }
-
-  select.innerHTML = list
-    .map((w) => `<option value="${w.id}">${w.name} (${w.mode})</option>`)
-    .join('')
+  el.workspaceSelect.textContent = ''
+  list.forEach((ws) => {
+    const opt = document.createElement('option')
+    opt.value = ws.id
+    opt.textContent = `${ws.name} (${ws.mode})`
+    el.workspaceSelect.appendChild(opt)
+  })
 }
 
-function setMode(nextMode) {
-  state.mode = nextMode
-  el('mode-study').classList.toggle('active', nextMode === 'STUDY')
-  el('mode-creator').classList.toggle('active', nextMode === 'CREATOR')
-  renderCategories()
-  renderWorkspaces()
+async function queryActiveTabMedia() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab?.id) return null
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ['content.js'],
+  })
+  return results?.[0]?.result || null
 }
 
 async function detectMediaInActiveTab() {
+  el.captureError.classList.add('hidden')
+  el.mediaTitle.textContent = 'Scanning active tab...'
+  el.mediaMeta.textContent = ''
+  el.mediaThumb.classList.add('hidden')
+  el.providerBadge.classList.add('hidden')
+  el.playbackBadge.classList.add('hidden')
+
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.id || !tab.url?.startsWith('http')) {
-      state.media = {
-        supported: false,
-        reason: 'Open an http/https webpage to capture media.',
-        pageTitle: tab?.title || 'Unsupported tab',
-        pageUrl: tab?.url || '',
-      }
-      renderMedia()
+    const info = await queryActiveTabMedia()
+    state.detectedMedia = info
+
+    if (!info || !info.supported) {
+      el.mediaTitle.textContent = 'No supported media detected'
+      el.mediaMeta.textContent = info?.reason || 'Open a YouTube video or HTML5 media page.'
+      el.saveBtn.disabled = true
       return
     }
 
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content.js'],
-    })
+    el.mediaTitle.textContent = info.pageTitle || 'External Media'
+    const currentFormatted = formatTimestamp(info.currentTime)
+    const durationFormatted = info.hasFiniteDuration
+      ? formatTimestamp(info.duration)
+      : 'Live / Unknown'
+    el.mediaMeta.textContent = info.channelName
+      ? `At ${currentFormatted} / ${durationFormatted} · ${info.channelName}`
+      : `At ${currentFormatted} / ${durationFormatted}`
 
-    state.media = results?.[0]?.result || {
-      supported: false,
-      reason: 'Could not inspect media on this page.',
-      pageTitle: tab.title,
-      pageUrl: tab.url,
+    if (info.provider === 'YOUTUBE' && info.thumbnailUrl) {
+      el.mediaThumb.src = info.thumbnailUrl
+      el.mediaThumb.classList.remove('hidden')
+      el.providerBadge.textContent = 'YouTube'
+      el.providerBadge.className = 'badge badge-yt'
+    } else {
+      el.providerBadge.textContent = info.tagName || 'Media'
+      el.providerBadge.className = 'badge'
     }
+
+    el.playbackBadge.textContent = info.paused ? 'Paused' : 'Playing'
+    el.playbackBadge.classList.remove('hidden')
+
+    if (!state.timestampManuallyEdited) {
+      el.timestampInput.value = currentFormatted
+    }
+    el.saveBtn.disabled = false
   } catch (err) {
-    state.media = {
-      supported: false,
-      reason: err.message || 'Page blocked script inspection.',
-      pageTitle: 'Unavailable',
-      pageUrl: '',
-    }
-  }
-  renderMedia()
-}
-
-function renderMedia() {
-  const m = state.media
-  if (!m) return
-  el('media-title').textContent = m.pageTitle || 'Untitled Page'
-  el('media-url').textContent = m.pageUrl || ''
-
-  const pill = el('media-status')
-  if (m.supported) {
-    pill.classList.remove('warn')
-    const durText = m.hasFiniteDuration
-      ? ` / ${formatSec(m.duration)}`
-      : ' (duration unavailable)'
-    pill.textContent = `HTML5 <${m.tagName}> · ${formatSec(m.currentTime)}${durText}`
-    el('timestamp-input').value = String(m.currentTime || 0)
-  } else {
-    pill.classList.add('warn')
-    pill.textContent = m.reason || 'No accessible HTML5 media detected.'
+    el.mediaTitle.textContent = 'Cannot inspect this page'
+    el.mediaMeta.textContent = err.message || 'Tab permissions unavailable.'
+    el.saveBtn.disabled = true
   }
 }
 
-async function showAuthenticatedView() {
-  el('auth-view').classList.add('hidden')
-  el('capture-view').classList.remove('hidden')
-  el('logout-btn').classList.remove('hidden')
-  el('user-name').textContent = state.user?.name || state.user?.email || ''
-
-  setMode(state.mode)
-
+async function bootstrapAuthenticatedSession() {
   try {
-    const { workspaces } = await apiFetch('/workspaces')
-    state.workspaces = workspaces || []
+    const me = await apiFetch('/auth/me')
+    state.user = me.user
+    el.userName.textContent = me.user.name
+    const wsRes = await apiFetch('/workspaces')
+    state.workspaces = wsRes.workspaces || []
+    showCaptureView()
+    renderModeButtons()
+    renderActionPills()
     renderWorkspaces()
+    await detectMediaInActiveTab()
+  } catch {
+    state.token = null
+    await chrome.storage.local.remove('echospaceToken')
+    showAuthView()
+  }
+}
+
+el.loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  el.authError.classList.add('hidden')
+  try {
+    const data = await apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: el.loginEmail.value.trim(),
+        password: el.loginPassword.value,
+      }),
+    })
+    state.token = data.token
+    await chrome.storage.local.set({ echospaceToken: data.token })
+    await bootstrapAuthenticatedSession()
   } catch (err) {
-    el('capture-error').textContent = err.message
-    el('capture-error').classList.remove('hidden')
+    el.authError.textContent = err.message
+    el.authError.classList.remove('hidden')
   }
+})
 
-  await detectMediaInActiveTab()
-}
+el.logoutBtn.addEventListener('click', async () => {
+  state.token = null
+  state.user = null
+  await chrome.storage.local.remove('echospaceToken')
+  showAuthView()
+})
 
-function showLoginView() {
-  el('auth-view').classList.remove('hidden')
-  el('capture-view').classList.add('hidden')
-  el('logout-btn').classList.add('hidden')
-}
-
-async function init() {
-  const stored = await chrome.storage.local.get([
-    'apiBaseUrl',
-    'webAppUrl',
-    'token',
-    'user',
-  ])
-  if (stored.apiBaseUrl) state.apiBaseUrl = stored.apiBaseUrl
-  if (stored.webAppUrl) state.webAppUrl = stored.webAppUrl
-
-  if (stored.token) {
-    state.token = stored.token
-    state.user = stored.user
-    try {
-      const me = await apiFetch('/auth/me')
-      state.user = me.user
-      await chrome.storage.local.set({ user: me.user })
-      await showAuthenticatedView()
-      return
-    } catch {
-      await chrome.storage.local.remove(['token', 'user'])
-      state.token = null
-      state.user = null
-    }
-  }
-  showLoginView()
-}
-
-el('options-btn').addEventListener('click', () => {
+el.optionsBtn.addEventListener('click', () => {
   chrome.runtime.openOptionsPage()
 })
 
-el('logout-btn').addEventListener('click', async () => {
-  await chrome.storage.local.remove(['token', 'user'])
-  state.token = null
-  state.user = null
-  showLoginView()
+el.refreshMediaBtn.addEventListener('click', () => {
+  state.timestampManuallyEdited = false
+  detectMediaInActiveTab()
 })
 
-el('mode-study').addEventListener('click', () => setMode('STUDY'))
-el('mode-creator').addEventListener('click', () => setMode('CREATOR'))
-el('refresh-media').addEventListener('click', detectMediaInActiveTab)
-
-el('login-form').addEventListener('submit', async (e) => {
-  e.preventDefault()
-  const errEl = el('login-error')
-  errEl.classList.add('hidden')
-  el('login-submit').disabled = true
-
-  try {
-    const email = el('login-email').value.trim()
-    const password = el('login-password').value
-    const data = await apiFetch('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    })
-    state.token = data.token
-    state.user = data.user
-    await chrome.storage.local.set({ token: data.token, user: data.user })
-    await showAuthenticatedView()
-  } catch (err) {
-    errEl.textContent = err.message
-    errEl.classList.remove('hidden')
-  } finally {
-    el('login-submit').disabled = false
-  }
+el.timestampInput.addEventListener('input', () => {
+  state.timestampManuallyEdited = true
 })
 
-el('annotate-form').addEventListener('submit', async (e) => {
+document.querySelectorAll('.mode-btn').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    state.mode = btn.dataset.mode
+    await chrome.storage.local.set({ echospaceMode: state.mode })
+    renderModeButtons()
+    renderActionPills()
+    renderWorkspaces()
+  })
+})
+
+document.querySelectorAll('.action-pill').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.action = btn.dataset.action
+    renderActionPills()
+  })
+})
+
+el.annotateForm.addEventListener('submit', async (e) => {
   e.preventDefault()
-  const errEl = el('capture-error')
-  const okEl = el('capture-success')
-  errEl.classList.add('hidden')
-  okEl.classList.add('hidden')
+  el.captureError.classList.add('hidden')
+  el.captureSuccess.classList.add('hidden')
 
-  const workspaceId = el('workspace-select').value
-  const category = el('category-select').value
-  const timestamp = Number(el('timestamp-input').value || 0)
-  const content = el('note-input').value.trim()
-
-  if (!workspaceId) {
-    errEl.textContent = 'Create or select a workspace in EchoSpace first.'
-    errEl.classList.remove('hidden')
+  if (!state.detectedMedia?.supported) {
+    el.captureError.textContent = 'No supported media detected on the current tab.'
+    el.captureError.classList.remove('hidden')
     return
   }
 
-  if (!state.media?.pageUrl) {
-    errEl.textContent = 'No webpage URL available to link.'
-    errEl.classList.remove('hidden')
+  const workspaceId = el.workspaceSelect.value
+  const note = el.noteInput.value.trim()
+  if (state.action !== 'BOOKMARK' && !note) {
+    el.captureError.textContent = 'Please enter a message before saving.'
+    el.captureError.classList.remove('hidden')
     return
   }
 
-  el('save-btn').disabled = true
+  el.saveBtn.disabled = true
   try {
+    // Capture live playback timestamp at action time unless user manually edited it
+    let timestamp = parseTimestampInput(el.timestampInput.value)
+    if (!state.timestampManuallyEdited) {
+      const liveInfo = await queryActiveTabMedia().catch(() => null)
+      if (liveInfo?.supported) {
+        state.detectedMedia = liveInfo
+        timestamp = Math.max(0, Number(liveInfo.currentTime) || 0)
+        el.timestampInput.value = formatTimestamp(timestamp)
+      }
+    }
+
+    if (!Number.isFinite(timestamp) || timestamp < 0) {
+      throw new Error('Enter a valid timestamp such as 12:43 or 763.')
+    }
+
+    const sourceUrl =
+      state.detectedMedia.canonicalUrl ||
+      state.detectedMedia.mediaSrc ||
+      state.detectedMedia.pageUrl
+
     const epRes = await apiFetch('/episodes/external', {
       method: 'POST',
       body: JSON.stringify({
         workspaceId,
-        title: state.media.pageTitle || 'Web Recording',
-        description: state.media.supported
-          ? `Captured from <${state.media.tagName}> on ${state.media.pageUrl}`
-          : `Linked webpage: ${state.media.pageUrl}`,
-        sourceUrl: state.media.pageUrl,
-        duration: state.media.duration || 0,
+        title: state.detectedMedia.pageTitle || 'External Media',
+        description:
+          state.detectedMedia.provider === 'YOUTUBE'
+            ? `YouTube video session (${state.detectedMedia.videoId})`
+            : `Captured from ${state.detectedMedia.pageUrl}`,
+        sourceUrl,
+        duration: state.detectedMedia.hasFiniteDuration
+          ? Math.ceil(state.detectedMedia.duration)
+          : 0,
+        reuseExisting: true,
       }),
     })
 
     const episodeId = epRes.episode.id
-    await apiFetch(`/episodes/${episodeId}/annotations`, {
-      method: 'POST',
-      body: JSON.stringify({ timestamp, category, content }),
-    })
+    state.lastEpisodeId = episodeId
 
-    el('note-input').value = ''
-    el('success-text').textContent = `Saved at ${formatSec(timestamp)}`
-    el('open-app-link').href = `${state.webAppUrl}/app/recordings/${episodeId}`
-    okEl.classList.remove('hidden')
+    if (state.action === 'BOOKMARK') {
+      await apiFetch(`/episodes/${episodeId}/bookmarks`, {
+        method: 'POST',
+        body: JSON.stringify({
+          timestamp,
+          label: note || `Bookmark at ${formatTimestamp(timestamp)}`,
+        }),
+      })
+      el.captureSuccess.textContent = `Bookmark saved at ${formatTimestamp(timestamp)}!`
+    } else {
+      const category =
+        state.action === 'QUESTION'
+          ? state.mode === 'STUDY'
+            ? 'QUESTION'
+            : 'FEEDBACK'
+          : el.categorySelect.value
+
+      await apiFetch(`/episodes/${episodeId}/annotations`, {
+        method: 'POST',
+        body: JSON.stringify({
+          timestamp,
+          category,
+          content: note,
+          shareToWorkspace: state.action === 'DISCUSS',
+        }),
+      })
+      el.captureSuccess.textContent =
+        state.action === 'DISCUSS'
+          ? `Moment shared with workspace at ${formatTimestamp(timestamp)}!`
+          : `Saved to workspace at ${formatTimestamp(timestamp)}!`
+    }
+
+    el.noteInput.value = ''
+    state.timestampManuallyEdited = false
+    el.captureSuccess.classList.remove('hidden')
   } catch (err) {
-    errEl.textContent = err.message
-    errEl.classList.remove('hidden')
+    el.captureError.textContent = err.message
+    el.captureError.classList.remove('hidden')
   } finally {
-    el('save-btn').disabled = false
+    el.saveBtn.disabled = false
   }
 })
 
-init()
+el.openAppBtn.addEventListener('click', () => {
+  const targetUrl = state.lastEpisodeId
+    ? `${state.webAppUrl}/app/recordings/${state.lastEpisodeId}`
+    : `${state.webAppUrl}/app/recordings`
+  chrome.tabs.create({ url: targetUrl })
+})
+
+el.openWsBtn?.addEventListener('click', () => {
+  chrome.tabs.create({ url: `${state.webAppUrl}/app` })
+})
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === 'ECHOSPACE_MEDIA_CHANGED') {
+    state.timestampManuallyEdited = false
+    detectMediaInActiveTab()
+  }
+})
+
+;(async function init() {
+  await loadSettings()
+  if (state.token) {
+    await bootstrapAuthenticatedSession()
+  } else {
+    showAuthView()
+  }
+})()

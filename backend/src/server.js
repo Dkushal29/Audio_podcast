@@ -4,6 +4,7 @@ import { prisma } from './config/prisma.js'
 import { createApp } from './app.js'
 import { initSocketServer } from './sockets/index.js'
 import { recoverImportJobs } from './modules/imports/imports.worker.js'
+import { recoverTranscriptionJobs } from './modules/transcriptions/transcriptions.worker.js'
 import { cleanupPendingDeletedEpisodes } from './modules/episodes/episodes.controller.js'
 
 const app = createApp()
@@ -18,6 +19,9 @@ server.listen(env.port, '0.0.0.0', () => {
   })
   recoverImportJobs().catch((err) => {
     console.error('[ImportWorker] Recovery error:', err.message)
+  })
+  recoverTranscriptionJobs().catch((err) => {
+    console.error('[TranscriptionWorker] Recovery error:', err.message)
   })
 })
 

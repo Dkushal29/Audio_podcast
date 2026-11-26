@@ -9,12 +9,14 @@ import {
   Plus,
   ExternalLink,
   Trash2,
+  Bookmark,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { AudioPlayer } from '../components/audio/AudioPlayer'
 import { ChapterTimeline } from '../components/audio/ChapterTimeline'
+import { TranscriptPanel } from '../components/audio/TranscriptPanel'
 import { AnnotationCard } from '../components/annotations/AnnotationCard'
 import { AnnotationForm } from '../components/annotations/AnnotationForm'
 import { ClipCard } from '../components/clips/ClipCard'
@@ -22,6 +24,11 @@ import { ClipModal } from '../components/clips/ClipModal'
 import { useEchoStore } from '../store/useEchoStore'
 import { getModeConfig } from '../config/modeConfig'
 import { formatTime } from '../utils/time'
+import {
+  extractYouTubeVideoId,
+  getYouTubeThumbnailUrl,
+  getYouTubeTimestampUrl,
+} from '../utils/youtube'
 import {
   getSocket,
   joinEpisodeRoom,
@@ -55,6 +62,15 @@ export function AudioWorkspacePage() {
   const deleteClip = useEchoStore((s) => s.deleteClip)
   const addChapter = useEchoStore((s) => s.addChapter)
   const deleteChapter = useEchoStore((s) => s.deleteChapter)
+  const createBookmark = useEchoStore((s) => s.createBookmark)
+  const deleteBookmark = useEchoStore((s) => s.deleteBookmark)
+
+  const applySocketBookmarkCreated = useEchoStore(
+    (s) => s.applySocketBookmarkCreated
+  )
+  const applySocketBookmarkDeleted = useEchoStore(
+    (s) => s.applySocketBookmarkDeleted
+  )
 
   const applySocketAnnotationCreated = useEchoStore(
     (s) => s.applySocketAnnotationCreated
@@ -85,6 +101,7 @@ export function AudioWorkspacePage() {
   const [loadingEpisode, setLoadingEpisode] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
+  const [authorizedAudioUrl, setAuthorizedAudioUrl] = useState(null)
 
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(recording?.duration || 0)
@@ -121,9 +138,17 @@ export function AudioWorkspacePage() {
     setActiveClipRange(null)
 
     loadEpisodeDetail(id)
-      .then((ep) => {
+      .then(async (ep) => {
         if (active && ep) {
           setDuration(ep.duration || 0)
+          if (ep.sourceType === 'UPLOAD') {
+            try {
+              const access = await apiClient.getEpisodeAudioAccess(id)
+              if (active && access?.url) setAuthorizedAudioUrl(access.url)
+            } catch {
+              if (active) setAuthorizedAudioUrl(apiClient.getEpisodeAudioUrl(id))
+            }
+          }
         }
       })
       .catch((err) => {
@@ -158,6 +183,10 @@ export function AudioWorkspacePage() {
     const onReplyDeleted = (payload) => applySocketReplyDeleted(payload)
     const onClipCreated = ({ clip }) => applySocketClipCreated(clip)
     const onClipDeleted = ({ clipId }) => applySocketClipDeleted(clipId)
+    const onBookmarkCreated = ({ bookmark }) =>
+      applySocketBookmarkCreated(id, bookmark)
+    const onBookmarkDeleted = ({ id: bookmarkId }) =>
+      applySocketBookmarkDeleted(id, bookmarkId)
 
     socket.on('annotation:created', onAnnCreated)
     socket.on('annotation:updated', onAnnUpdated)
@@ -166,6 +195,8 @@ export function AudioWorkspacePage() {
     socket.on('reply:deleted', onReplyDeleted)
     socket.on('clip:created', onClipCreated)
     socket.on('clip:deleted', onClipDeleted)
+    socket.on('bookmark:created', onBookmarkCreated)
+    socket.on('bookmark:deleted', onBookmarkDeleted)
 
     return () => {
       active = false
@@ -177,6 +208,8 @@ export function AudioWorkspacePage() {
       socket.off('reply:deleted', onReplyDeleted)
       socket.off('clip:created', onClipCreated)
       socket.off('clip:deleted', onClipDeleted)
+      socket.off('bookmark:created', onBookmarkCreated)
+      socket.off('bookmark:deleted', onBookmarkDeleted)
     }
   }, [token, id])
 
@@ -238,11 +271,21 @@ export function AudioWorkspacePage() {
     recording.sourceType === 'UPLOAD'
       ? {
           ...recording,
-          audioUrl: apiClient.getEpisodeAudioUrl(recording.id),
+          audioUrl: authorizedAudioUrl || apiClient.getEpisodeAudioUrl(recording.id),
         }
       : isExternalDirectAudio
         ? { ...recording, audioUrl: recording.sourceUrl }
         : null
+
+  const handleRetryAudio = async () => {
+    if (recording.sourceType !== 'UPLOAD') return
+    try {
+      const access = await apiClient.getEpisodeAudioAccess(recording.id)
+      if (access?.url) setAuthorizedAudioUrl(access.url)
+    } catch {
+      setAuthorizedAudioUrl(`${apiClient.getEpisodeAudioUrl(recording.id)}&_r=${Date.now()}`)
+    }
+  }
 
   const seekTo = (time, autoplay = false) => {
     const safe = Math.max(0, time)
@@ -473,58 +516,200 @@ export function AudioWorkspacePage() {
                   : undefined
               }
               onCancelHighlight={() => setHighlightStart(null)}
+              onRetryAudio={handleRetryAudio}
             />
-          ) : (
-            <Card className="p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <p className="text-sm font-medium text-[#F4F4F5]">
-                    External Media Link
-                  </p>
-                  <p className="text-xs text-[#A1A1AA] truncate">
-                    {recording.sourceUrl}
-                  </p>
-                  <p className="text-[11px] text-[#71717A]">
-                    This link points to an external webpage rather than a direct
-                    audio stream. Open the original source to listen, and record
-                    timestamped notes below.
-                  </p>
-                </div>
-                {recording.sourceUrl && (
-                  <a
-                    href={recording.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg bg-[#18181D] border border-[#27272F] text-xs font-medium text-[#22D3EE] hover:border-[#22D3EE]/40"
-                  >
-                    Open Source Media
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-              </div>
+          ) : (() => {
+            const youtubeId = extractYouTubeVideoId(recording.sourceUrl)
+            const ytThumb = getYouTubeThumbnailUrl(youtubeId)
+            const ytJumpUrl = getYouTubeTimestampUrl(
+              recording.sourceUrl,
+              currentTime
+            )
+            const bookmarks = recording.bookmarks || []
 
-              {canWrite && (
-                <div className="pt-3 border-t border-[#27272F] flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant={mode === 'study' ? 'cyan' : 'primary'}
-                    onClick={() => setShowAnnotationForm(true)}
-                  >
-                    <MessageSquarePlus className="w-3.5 h-3.5" />
-                    Create Annotation
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setClipModalOpen(true)}
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                    Create Clip
-                  </Button>
-                </div>
-              )}
-            </Card>
-          )}
+            return (
+              <>
+                <Card className="p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      {ytThumb && (
+                        <img
+                          src={ytThumb}
+                          alt={recording.title}
+                          className="w-28 h-16 rounded-lg object-cover border border-[#27272F] shrink-0"
+                        />
+                      )}
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge tone={youtubeId ? 'rose' : 'cyan'}>
+                            {youtubeId ? 'YouTube Collaboration' : 'External Media Link'}
+                          </Badge>
+                          {youtubeId && currentTime > 0 && (
+                            <span className="text-[11px] font-mono text-[#22D3EE]">
+                              Selected: {formatTime(currentTime)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#A1A1AA] truncate">
+                          {recording.sourceUrl}
+                        </p>
+                        <p className="text-[11px] text-[#71717A]">
+                          {youtubeId
+                            ? 'Synced from YouTube without downloading video/audio. Waveform, AI transcription, and audio clips are disabled; annotations, questions, and bookmarks sync live with the Chrome extension.'
+                            : 'This link points to an external webpage rather than a direct audio stream. Open the original source to listen, and record timestamped notes below.'}
+                        </p>
+                      </div>
+                    </div>
+                    {recording.sourceUrl && (
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {ytJumpUrl && currentTime > 0 && (
+                          <a
+                            href={ytJumpUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#164E63]/40 border border-[#22D3EE]/40 text-xs font-medium text-[#67E8F9] hover:border-[#22D3EE]"
+                          >
+                            Jump to {formatTime(currentTime)}
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        <a
+                          href={recording.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181D] border border-[#27272F] text-xs font-medium text-[#22D3EE] hover:border-[#22D3EE]/40"
+                        >
+                          {youtubeId ? 'Open on YouTube' : 'Open Source Media'}
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {canWrite && (
+                    <div className="pt-3 border-t border-[#27272F] flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={mode === 'study' ? 'cyan' : 'primary'}
+                        onClick={() => setShowAnnotationForm(true)}
+                      >
+                        <MessageSquarePlus className="w-3.5 h-3.5" />
+                        Create Annotation
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() =>
+                          handleAction(
+                            () =>
+                              createBookmark(recording.id, {
+                                timestamp: currentTime || 0,
+                                label: `Bookmark at ${formatTime(currentTime || 0)}`,
+                              }),
+                            'Failed to save bookmark.'
+                          )
+                        }
+                      >
+                        <Bookmark className="w-3.5 h-3.5" />
+                        Bookmark ({formatTime(currentTime)})
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+
+                {/* Timestamped Bookmarks */}
+                <Card className="p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                      Bookmarks ({bookmarks.length})
+                    </span>
+                  </div>
+                  {bookmarks.length === 0 ? (
+                    <p className="text-xs text-[#A1A1B0]">
+                      No bookmarks yet. Save a key moment from the YouTube extension or click Bookmark above.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {bookmarks.map((bm) => {
+                        const bmYtUrl = getYouTubeTimestampUrl(
+                          recording.sourceUrl,
+                          bm.timestamp
+                        )
+                        const canDel =
+                          isManager || (user && bm.userId === user.id)
+                        return (
+                          <div
+                            key={bm.id}
+                            className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[#09090B] border border-[#27272F]"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => seekTo(bm.timestamp)}
+                                className="px-2 py-0.5 rounded bg-[#18181D] border border-[#27272F] text-[11px] font-mono text-[#22D3EE] hover:border-[#22D3EE]/50 cursor-pointer shrink-0"
+                              >
+                                {formatTime(bm.timestamp)}
+                              </button>
+                              <span className="text-xs text-[#F4F4F5] truncate">
+                                {bm.label || `Moment at ${formatTime(bm.timestamp)}`}
+                              </span>
+                              {bm.user?.name && (
+                                <span className="text-[11px] text-[#71717A] shrink-0">
+                                  by {bm.user.name}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {bmYtUrl && (
+                                <a
+                                  href={bmYtUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] text-[#67E8F9] hover:underline"
+                                >
+                                  YouTube
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                              {canDel && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleAction(
+                                      () => deleteBookmark(recording.id, bm.id),
+                                      'Failed to delete bookmark.'
+                                    )
+                                  }
+                                  className="text-[#71717A] hover:text-rose-400 cursor-pointer"
+                                  title="Delete bookmark"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </>
+            )
+          })()}
+
+          {/* Transcript & Audio Intelligence */}
+          <TranscriptPanel
+            episodeId={recording.id}
+            mode={mode}
+            currentTime={currentTime}
+            canWrite={canWrite}
+            hasAudio={Boolean(playableRecording)}
+            onSeekTo={(t, autoplay) => seekTo(t, autoplay)}
+            onAnnotateAt={(t) => {
+              seekTo(t, false)
+              setShowAnnotationForm(true)
+            }}
+          />
 
           {/* Chapters Card */}
           <Card className="p-5 space-y-3">
@@ -584,7 +769,7 @@ export function AudioWorkspacePage() {
                 }
               />
             ) : (
-              <p className="text-xs text-[#71717A]">
+              <p className="text-xs text-[#A1A1B0]">
                 No chapters added yet. Seek to a moment and click Add Chapter.
               </p>
             )}
@@ -594,10 +779,10 @@ export function AudioWorkspacePage() {
           <Card className="p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-[#F4F4F5]">
+                <h2 className="text-sm font-semibold text-[#F4F4F7] font-display">
                   Highlight Clips ({recordingClips.length})
                 </h2>
-                <p className="text-[11px] text-[#71717A]">
+                <p className="text-xs text-[#A1A1B0]">
                   Play exact intervals or share public clip links
                 </p>
               </div>
@@ -646,13 +831,13 @@ export function AudioWorkspacePage() {
 
         {/* Right Discussion Panel (4 cols) */}
         <div className="xl:col-span-4 space-y-4">
-          <Card className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
+          <Card className="p-4 sm:p-5 space-y-4">
+            <div className="flex items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold text-[#F4F4F5]">
+                <h2 className="text-sm font-semibold text-[#F4F4F7] font-display">
                   {mode === 'study' ? 'Study Notes & Doubts' : 'Review Notes'}
                 </h2>
-                <p className="text-[11px] text-[#71717A]">
+                <p className="text-xs text-[#A1A1B0] mt-0.5">
                   Click any timestamp to jump in the waveform
                 </p>
               </div>
@@ -676,8 +861,10 @@ export function AudioWorkspacePage() {
                   onClick={() => setCategoryFilter(f)}
                   className={`px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors cursor-pointer ${
                     categoryFilter === f
-                      ? 'bg-[#18181D] border-[#8B5CF6]/50 text-[#F4F4F5]'
-                      : 'bg-[#09090B] border-[#27272F] text-[#A1A1AA] hover:text-[#F4F4F5]'
+                      ? mode === 'study'
+                        ? 'bg-[#16161D] border-[#22D3EE]/50 text-[#F4F4F7]'
+                        : 'bg-[#16161D] border-[#8B5CF6]/55 text-[#F4F4F7]'
+                      : 'bg-[#08080B] border-[#22222B] text-[#A1A1B0] hover:text-[#F4F4F7]'
                   }`}
                 >
                   {f}
@@ -696,9 +883,9 @@ export function AudioWorkspacePage() {
             )}
 
             {/* Annotation Thread List */}
-            <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+            <div className="space-y-3 xl:max-h-[580px] xl:overflow-y-auto xl:pr-1">
               {recordingAnnotations.length === 0 ? (
-                <div className="py-8 text-center text-xs text-[#71717A]">
+                <div className="py-8 text-center text-xs text-[#A1A1B0]">
                   {cfg.emptyStateText}
                 </div>
               ) : (

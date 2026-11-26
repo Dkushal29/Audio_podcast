@@ -14,12 +14,27 @@ export function setAuthToken(token) {
 }
 
 export function getAuthToken() {
-  return authToken
+  if (authToken) return authToken
+  try {
+    const raw = localStorage.getItem('echospace-store-v2')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const persisted = parsed?.state?.token
+      if (persisted) {
+        authToken = persisted
+        return persisted
+      }
+    }
+  } catch {
+    // Ignore storage read error
+  }
+  return null
 }
 
 http.interceptors.request.use((config) => {
-  if (authToken) {
-    config.headers.Authorization = `Bearer ${authToken}`
+  const token = getAuthToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
@@ -108,7 +123,13 @@ export const apiClient = {
 
   getEpisodeAudioUrl(episodeId) {
     const base = `${API_BASE_URL}/episodes/${episodeId}/audio`
-    return authToken ? `${base}?token=${encodeURIComponent(authToken)}` : base
+    const token = getAuthToken()
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base
+  },
+
+  async getEpisodeAudioAccess(episodeId) {
+    const { data } = await http.get(`/episodes/${episodeId}/audio-url`)
+    return data
   },
 
   // Annotations
@@ -177,6 +198,21 @@ export const apiClient = {
     return data.chapter
   },
 
+  // Bookmarks
+  async listBookmarks(episodeId) {
+    const { data } = await http.get(`/episodes/${episodeId}/bookmarks`)
+    return data.bookmarks
+  },
+
+  async createBookmark(episodeId, payload) {
+    const { data } = await http.post(`/episodes/${episodeId}/bookmarks`, payload)
+    return data.bookmark
+  },
+
+  async deleteBookmark(bookmarkId) {
+    await http.delete(`/bookmarks/${bookmarkId}`)
+  },
+
   async updateChapter(chapterId, payload) {
     const { data } = await http.patch(`/chapters/${chapterId}`, payload)
     return data.chapter
@@ -231,6 +267,11 @@ export const apiClient = {
   },
 
   // Imports (Direct Audio & Podcast RSS)
+  async inspectImportSource(url) {
+    const { data } = await http.post('/imports/inspect', { url })
+    return data
+  },
+
   async previewRss(url) {
     const { data } = await http.post('/imports/rss/preview', { url })
     return data.feed
@@ -246,6 +287,11 @@ export const apiClient = {
     return data
   },
 
+  async importRssBatch(payload) {
+    const { data } = await http.post('/imports/rss/batch', payload)
+    return data
+  },
+
   async getImportJob(id) {
     const { data } = await http.get(`/imports/${id}`)
     return data.job
@@ -254,5 +300,42 @@ export const apiClient = {
   async retryImportJob(id) {
     const { data } = await http.post(`/imports/${id}/retry`)
     return data.job
+  },
+
+  async cancelImportJob(id) {
+    const { data } = await http.post(`/imports/${id}/cancel`)
+    return data.job
+  },
+
+  // Transcriptions (Deepgram)
+  async getTranscription(episodeId) {
+    const { data } = await http.get(`/episodes/${episodeId}/transcription`)
+    return data.transcript
+  },
+
+  async requestTranscription(episodeId, options = {}) {
+    const { data } = await http.post(`/episodes/${episodeId}/transcription`, options)
+    return data.transcript
+  },
+
+  async retryTranscription(episodeId) {
+    const { data } = await http.post(`/episodes/${episodeId}/transcription/retry`)
+    return data.transcript
+  },
+
+  async cancelTranscription(episodeId) {
+    const { data } = await http.post(`/episodes/${episodeId}/transcription/cancel`)
+    return data.transcript
+  },
+
+  async updateSpeakerLabels(episodeId, speakers) {
+    const { data } = await http.patch(`/episodes/${episodeId}/transcription/speakers`, {
+      speakers,
+    })
+    return data.transcript
+  },
+
+  async deleteTranscription(episodeId) {
+    await http.delete(`/episodes/${episodeId}/transcription`)
   },
 }

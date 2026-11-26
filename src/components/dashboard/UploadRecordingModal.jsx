@@ -1,13 +1,28 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, Music2, Link2, Rss, RefreshCw } from 'lucide-react'
+import { Upload, Music2, Link2, Rss, RefreshCw, XCircle, CheckCircle2, Info } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Input, Textarea } from '../ui/Input'
 import { Button } from '../ui/Button'
+import { Badge } from '../ui/Badge'
 import { useEchoStore } from '../../store/useEchoStore'
 import { getModeConfig } from '../../config/modeConfig'
 import { apiClient } from '../../services/api'
+import { getSocket } from '../../services/socket'
 import { formatTime } from '../../utils/time'
+
+const IMPORT_STAGE_LABELS = {
+  QUEUED: 'Queued for processing',
+  VALIDATING: 'Validating URL & security checks',
+  FETCHING: 'Connecting to remote media',
+  DOWNLOADING: 'Downloading media stream',
+  EXTRACTING: 'Extracting audio track (FFmpeg)',
+  PROCESSING: 'Validating & preparing audio',
+  UPLOADING: 'Saving to Tigris storage',
+  COMPLETED: 'Import complete',
+  FAILED: 'Import failed',
+  CANCELLED: 'Import cancelled',
+}
 
 export function UploadRecordingModal({ isOpen, onClose }) {
   const navigate = useNavigate()
@@ -35,14 +50,33 @@ export function UploadRecordingModal({ isOpen, onClose }) {
 
   // Import & RSS state
   const [importUrl, setImportUrl] = useState('')
+  const [inspectingUrl, setInspectingUrl] = useState(false)
+  const [sourceInfo, setSourceInfo] = useState(null)
   const [rssFeed, setRssFeed] = useState(null)
   const [previewingRss, setPreviewingRss] = useState(false)
   const [importJob, setImportJob] = useState(null)
+  const [deduplicatedNotice, setDeduplicatedNotice] = useState(false)
+  const [duplicateEpisode, setDuplicateEpisode] = useState(null)
 
+  // Live Socket.IO import status updates + polling fallback
   useEffect(() => {
-    if (!importJob || ['COMPLETED', 'FAILED', 'CANCELLED'].includes(importJob.status)) {
-      return
+    if (!importJob) return
+    const socket = getSocket()
+    const onImportUpdated = ({ job }) => {
+      if (!job || job.id !== importJob.id) return
+      setImportJob(job)
+      if (job.status === 'COMPLETED' && job.episodeId) {
+        loadWorkspaces().catch(() => {})
+      }
     }
+    socket?.on('import:updated', onImportUpdated)
+
+    if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(importJob.status)) {
+      return () => {
+        socket?.off('import:updated', onImportUpdated)
+      }
+    }
+
     const timer = setInterval(async () => {
       try {
         const latest = await apiClient.getImportJob(importJob.id)
@@ -50,15 +84,52 @@ export function UploadRecordingModal({ isOpen, onClose }) {
         if (latest.status === 'COMPLETED' && latest.episodeId) {
           clearInterval(timer)
           await loadWorkspaces().catch(() => {})
-          onClose()
-          navigate(`/app/recordings/${latest.episodeId}`)
         }
       } catch {
         // Keep polling on transient error
       }
     }, 1500)
-    return () => clearInterval(timer)
-  }, [importJob, navigate, onClose, loadWorkspaces])
+    return () => {
+      clearInterval(timer)
+      socket?.off('import:updated', onImportUpdated)
+    }
+  }, [importJob, loadWorkspaces])
+
+  // Debounced source URL inspection
+  useEffect(() => {
+    if (sourceTab !== 'import' || !importUrl.trim()) {
+      setSourceInfo(null)
+      setInspectingUrl(false)
+      return
+    }
+    try {
+      new URL(importUrl.trim())
+    } catch {
+      setInspectingUrl(false)
+      setSourceInfo({
+        valid: false,
+        statusLabel: 'Invalid Source',
+        message: 'Enter a valid http or https URL.',
+      })
+      return
+    }
+    setInspectingUrl(true)
+    const handle = setTimeout(async () => {
+      try {
+        const res = await apiClient.inspectImportSource(importUrl.trim())
+        setSourceInfo(res.source)
+      } catch (err) {
+        setSourceInfo({
+          valid: false,
+          statusLabel: 'Invalid Source',
+          message: err.response?.data?.error?.message || 'URL cannot be imported.',
+        })
+      } finally {
+        setInspectingUrl(false)
+      }
+    }, 350)
+    return () => clearTimeout(handle)
+  }, [importUrl, sourceTab])
 
   const handleFileChange = (e) => {
     const selected = e.target.files?.[0]
@@ -78,15 +149,16 @@ export function UploadRecordingModal({ isOpen, onClose }) {
     })
   }
 
-  const handlePreviewRss = async () => {
-    if (!importUrl.trim()) {
-      setError('Enter a podcast RSS feed URL first.')
+  const handlePreviewRss = async (overrideUrl) => {
+    const targetUrl = (typeof overrideUrl === 'string' ? overrideUrl : '') || sourceInfo?.feedUrl || importUrl.trim()
+    if (!targetUrl) {
+      setError('Enter a podcast show or RSS feed URL first.')
       return
     }
     try {
       setError('')
       setPreviewingRss(true)
-      const feed = await apiClient.previewRss(importUrl.trim())
+      const feed = await apiClient.previewRss(targetUrl)
       setRssFeed(feed)
     } catch (err) {
       setError(
@@ -123,50 +195,65 @@ export function UploadRecordingModal({ isOpen, onClose }) {
     }
   }
 
+  const startImportRequest = async (force = false) => {
+    if (!activeWorkspaceId) {
+      setError('No active workspace selected.')
+      return
+    }
+    if (!importUrl.trim()) {
+      setError('Please enter a direct audio, video, cloud, or podcast URL.')
+      return
+    }
+    if (sourceInfo?.suggestedAction === 'BROWSE_EPISODES') {
+      await handlePreviewRss(sourceInfo.feedUrl || importUrl.trim())
+      return
+    }
+    try {
+      setSubmitting(true)
+      setError('')
+      setDuplicateEpisode(null)
+      const parsedTags = tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const res = await apiClient.createImport({
+        workspaceId: activeWorkspaceId,
+        url: importUrl.trim(),
+        title: title.trim() || undefined,
+        description: description.trim(),
+        tags: parsedTags,
+        force,
+      })
+      if (res.duplicate && res.existingEpisode) {
+        setDuplicateEpisode(res.existingEpisode)
+        return
+      }
+      if (res.mode === 'EXTERNAL_LINK' && res.episode?.id) {
+        await loadWorkspaces().catch(() => {})
+        onClose()
+        navigate(`/app/recordings/${res.episode.id}`)
+        return
+      }
+      if (res.job) {
+        setImportJob(res.job)
+        setDeduplicatedNotice(Boolean(res.deduplicated))
+      }
+    } catch (err) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          'Failed to start import.'
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
     if (sourceTab === 'import') {
-      if (!activeWorkspaceId) {
-        setError('No active workspace selected.')
-        return
-      }
-      if (!importUrl.trim()) {
-        setError('Please enter a direct audio URL or RSS feed URL.')
-        return
-      }
-      try {
-        setSubmitting(true)
-        setError('')
-        const parsedTags = tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
-        const res = await apiClient.createImport({
-          workspaceId: activeWorkspaceId,
-          url: importUrl.trim(),
-          title: title.trim() || undefined,
-          description: description.trim(),
-          tags: parsedTags,
-        })
-        if (res.mode === 'EXTERNAL_LINK' && res.episode?.id) {
-          await loadWorkspaces().catch(() => {})
-          onClose()
-          navigate(`/app/recordings/${res.episode.id}`)
-          return
-        }
-        if (res.job) {
-          setImportJob(res.job)
-        }
-      } catch (err) {
-        setError(
-          err.response?.data?.error?.message ||
-            err.message ||
-            'Failed to start import.'
-        )
-      } finally {
-        setSubmitting(false)
-      }
+      await startImportRequest(false)
       return
     }
 
@@ -309,6 +396,9 @@ export function UploadRecordingModal({ isOpen, onClose }) {
 
         {sourceTab === 'import' && (
           <div className="space-y-3">
+            <p className="text-[11px] text-[#A1A1B0]">
+              Supported: Direct audio URLs (with or without extensions), Podcast RSS/Atom feeds, and public Google Drive, Dropbox, or OneDrive audio links.
+            </p>
             <div className="flex gap-2 items-end">
               <div className="flex-1">
                 <Input
@@ -364,30 +454,201 @@ export function UploadRecordingModal({ isOpen, onClose }) {
               </div>
             )}
 
-            {importJob && (
-              <div className="p-3 rounded-lg bg-[#09090B] border border-[#27272F] space-y-1.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-[#F4F4F5]">
-                    Status: {importJob.status}
-                  </span>
-                  <span className="font-mono text-[#A1A1AA]">
-                    {importJob.progress}%
-                  </span>
+            {inspectingUrl && (
+              <div className="p-2.5 rounded-lg border border-[#22222B] bg-[#08080B] text-xs text-[#A1A1B0]">
+                Inspecting link...
+              </div>
+            )}
+
+            {!inspectingUrl && sourceInfo && (
+              <div
+                className={`p-3 rounded-lg border text-xs space-y-2 ${
+                  sourceInfo.valid
+                    ? 'bg-[#08080B] border-[#22222B] text-[#A1A1B0]'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#22D3EE]" />
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {sourceInfo.statusLabel && (
+                        <Badge
+                          tone={
+                            !sourceInfo.valid
+                              ? 'rose'
+                              : sourceInfo.supportedForDownload
+                                ? 'cyan'
+                                : 'primary'
+                          }
+                        >
+                          {sourceInfo.statusLabel}
+                        </Badge>
+                      )}
+                      {sourceInfo.provider && sourceInfo.provider !== sourceInfo.statusLabel && (
+                        <span className="text-[11px] text-[#8A8A9A]">
+                          {sourceInfo.provider}
+                        </span>
+                      )}
+                      {sourceInfo.fileSize > 0 && (
+                        <span className="text-[11px] font-mono-time text-[#8A8A9A]">
+                          · {(sourceInfo.fileSize / (1024 * 1024)).toFixed(2)} MB
+                        </span>
+                      )}
+                    </div>
+                    <p className="leading-relaxed">{sourceInfo.message}</p>
+                  </div>
                 </div>
-                {importJob.error && (
-                  <div className="flex items-center justify-between gap-2 text-rose-400">
-                    <span>{importJob.error}</span>
+
+                {!sourceInfo.valid && (
+                  <div className="pt-1 border-t border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-[#A1A1B0]">
+                      Try uploading an audio file, sharing a public cloud/RSS link, or saving as external link.
+                    </span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSourceUrl(importUrl.trim())
+                          setSourceTab('external')
+                          setError('')
+                        }}
+                        className="text-[11px] font-medium text-[#A78BFA] hover:underline cursor-pointer"
+                      >
+                        Save as External Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSourceTab('upload')
+                          setError('')
+                        }}
+                        className="text-[11px] font-medium text-[#22D3EE] hover:underline cursor-pointer"
+                      >
+                        Upload File Instead
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {duplicateEpisode && (
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs space-y-2">
+                <p className="font-medium text-amber-300">
+                  This episode already exists in your workspace: {duplicateEpisode.title}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      onClose()
+                      navigate(`/app/recordings/${duplicateEpisode.id}`)
+                    }}
+                  >
+                    Open Existing Episode
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => startImportRequest(true)}
+                  >
+                    Import Anyway
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {importJob && (
+              <div className="p-3.5 rounded-lg bg-[#08080B] border border-[#22222B] space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge
+                      tone={
+                        importJob.status === 'COMPLETED'
+                          ? 'emerald'
+                          : importJob.status === 'FAILED'
+                            ? 'rose'
+                            : importJob.status === 'CANCELLED'
+                              ? 'neutral'
+                              : 'cyan'
+                      }
+                    >
+                      {importJob.status}
+                    </Badge>
+                    <span className="font-medium text-[#F4F4F7] truncate">
+                      {IMPORT_STAGE_LABELS[importJob.status] || importJob.status}
+                    </span>
+                  </div>
+                  {deduplicatedNotice && (
+                    <span className="text-[10px] text-[#A1A1B0] shrink-0">
+                      Existing job resumed
+                    </span>
+                  )}
+                </div>
+
+                {!['COMPLETED', 'FAILED', 'CANCELLED'].includes(importJob.status) && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex-1 h-1.5 bg-[#16161D] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#22D3EE] transition-all duration-300"
+                        style={{ width: `${Math.max(8, importJob.progress || 0)}%` }}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={async () => {
-                        const retried = await apiClient.retryImportJob(importJob.id)
-                        setImportJob(retried)
+                        const cancelled = await apiClient.cancelImportJob(importJob.id)
+                        setImportJob(cancelled)
                       }}
-                      className="inline-flex items-center gap-1 text-[#22D3EE] hover:underline cursor-pointer shrink-0"
+                      className="inline-flex items-center gap-1 text-[11px] text-[#A1A1B0] hover:text-rose-400 cursor-pointer shrink-0"
                     >
-                      <RefreshCw className="w-3 h-3" />
-                      Retry
+                      <XCircle className="w-3.5 h-3.5" />
+                      Cancel
                     </button>
+                  </div>
+                )}
+
+                {importJob.status === 'COMPLETED' && importJob.episodeId && (
+                  <div className="flex items-center justify-between gap-2 pt-1 text-emerald-400">
+                    <span className="inline-flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Ready in your workspace
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={mode === 'study' ? 'cyan' : 'primary'}
+                      onClick={() => {
+                        onClose()
+                        navigate(`/app/recordings/${importJob.episodeId}`)
+                      }}
+                    >
+                      Open in Studio
+                    </Button>
+                  </div>
+                )}
+
+                {importJob.error && (
+                  <div className="flex items-center justify-between gap-2 text-rose-400 pt-1">
+                    <span className="leading-snug">{importJob.error}</span>
+                    {importJob.metadata?.retryable !== false && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const retried = await apiClient.retryImportJob(importJob.id)
+                          setImportJob(retried)
+                          setDeduplicatedNotice(false)
+                        }}
+                        className="inline-flex items-center gap-1 text-[#22D3EE] hover:underline cursor-pointer shrink-0"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Retry
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -491,13 +752,22 @@ export function UploadRecordingModal({ isOpen, onClose }) {
             <Button
               type="submit"
               variant={mode === 'study' ? 'cyan' : 'primary'}
-              disabled={submitting}
+              disabled={
+                submitting ||
+                (sourceTab === 'import' && sourceInfo && sourceInfo.valid === false)
+              }
             >
               <Upload className="w-3.5 h-3.5" />
               {submitting
                 ? 'Processing...'
                 : sourceTab === 'import'
-                  ? 'Start Import'
+                  ? sourceInfo?.suggestedAction === 'EXTRACT_AND_IMPORT'
+                    ? 'Extract Audio & Import'
+                    : sourceInfo?.suggestedAction === 'BROWSE_EPISODES'
+                      ? 'Browse Episodes'
+                      : sourceInfo?.suggestedAction === 'SAVE_EXTERNAL_LINK'
+                        ? 'Save as External Link'
+                        : 'Import Audio'
                   : 'Create & Open'}
             </Button>
           )}

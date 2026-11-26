@@ -1,11 +1,13 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUpRight, MessageSquareText, Search } from 'lucide-react'
+import { ArrowUpRight, ExternalLink, MessageSquareText, Search } from 'lucide-react'
 import { AnnotationCard } from '../components/annotations/AnnotationCard'
 import { Badge } from '../components/ui/Badge'
 import { Card } from '../components/ui/Card'
 import { useEchoStore } from '../store/useEchoStore'
 import { getModeConfig } from '../config/modeConfig'
+import { extractYouTubeVideoId, getYouTubeTimestampUrl } from '../utils/youtube'
+import { formatTime } from '../utils/time'
 
 export function DiscussionsPage() {
   const navigate = useNavigate()
@@ -96,23 +98,41 @@ export function DiscussionsPage() {
       <div className="space-y-4">
         {modeAnnotations.map((ann) => {
           const rec = recordings.find((r) => r.id === ann.recordingId)
+          const ytId = extractYouTubeVideoId(rec?.sourceUrl)
+          const ytJumpUrl = ytId
+            ? getYouTubeTimestampUrl(rec.sourceUrl, ann.timestamp)
+            : null
           return (
             <div key={ann.id} className="space-y-1.5">
-              <div className="flex items-center justify-between px-1">
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate(
-                      `/app/recordings/${ann.recordingId}?t=${Math.floor(
-                        ann.timestamp || 0
-                      )}&ann=${ann.id}`
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1B0] hover:text-[#F4F4F7] cursor-pointer"
-                >
-                  <span>{rec?.title || 'Recording'}</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
+              <div className="flex items-center justify-between px-1 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        `/app/recordings/${ann.recordingId}?t=${Math.floor(
+                          ann.timestamp || 0
+                        )}&ann=${ann.id}`
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1B0] hover:text-[#F4F4F7] cursor-pointer truncate"
+                  >
+                    <span className="truncate">{rec?.title || 'Recording'}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+                  </button>
+                  {ytId && <Badge tone="rose">YouTube</Badge>}
+                </div>
+                {ytJumpUrl && (
+                  <a
+                    href={ytJumpUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-[#22D3EE] hover:underline shrink-0"
+                  >
+                    Watch @ {formatTime(ann.timestamp || 0)}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
               <AnnotationCard
                 annotation={ann}

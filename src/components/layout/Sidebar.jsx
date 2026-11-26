@@ -107,15 +107,18 @@ export function Sidebar({ mobileOpen, onClose }) {
       <div className="px-3 pt-4 pb-3 border-b border-[#22222B]/60">
         <div className="p-3 rounded-xl bg-[#101015] border border-[#22222B] space-y-2.5">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-[10px] uppercase tracking-wider text-[#6E6E7E] font-semibold block">
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] uppercase tracking-wider text-[#8A8A9A] font-semibold block">
                 Active Workspace
               </span>
-              <p className="text-xs font-semibold text-[#F4F4F7] truncate mt-0.5">
+              <p
+                className="text-[13px] font-semibold text-[#F4F4F7] leading-snug line-clamp-2 mt-0.5 break-words"
+                title={workspaceTitle}
+              >
                 {workspaceTitle}
               </p>
             </div>
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#16161D] border border-[#22222B] text-[#A1A1B0] shrink-0">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#16161D] border border-[#22222B] text-[#A1A1B0] shrink-0 mt-0.5">
               {activeWorkspaceRole}
             </span>
           </div>

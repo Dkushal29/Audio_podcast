@@ -30,7 +30,6 @@ export function ModeWorkspaceOverview({ targetMode, titleOverride, subtitleOverr
   const navigate = useNavigate()
   const outletContext = useOutletContext() || {}
   const storeMode = useEchoStore((s) => s.mode)
-  const setMode = useEchoStore((s) => s.setMode)
   const user = useEchoStore((s) => s.user)
   const recordings = useEchoStore((s) => s.recordings)
   const annotations = useEchoStore((s) => s.annotations)
@@ -55,13 +54,6 @@ export function ModeWorkspaceOverview({ targetMode, titleOverride, subtitleOverr
 
   const sectionTitle = (id) =>
     cfg.dashboardSections.find((s) => s.id === id)?.title || id
-
-  const handleModeSwitch = (nextMode) => {
-    setMode(nextMode)
-    if (targetMode) {
-      navigate(nextMode === 'study' ? '/app/study' : '/app/creator')
-    }
-  }
 
   const statItems = [
     {
@@ -121,39 +113,6 @@ export function ModeWorkspaceOverview({ targetMode, titleOverride, subtitleOverr
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <div className="inline-flex bg-[#08080B] border border-[#22222B] rounded-lg p-1">
-              <button
-                type="button"
-                onClick={() => handleModeSwitch('study')}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                  isStudy
-                    ? 'bg-[#22D3EE]/15 text-[#22D3EE]'
-                    : 'text-[#A1A1B0] hover:text-[#F4F4F7]'
-                }`}
-              >
-                Study
-              </button>
-              <button
-                type="button"
-                onClick={() => handleModeSwitch('creator')}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                  !isStudy
-                    ? 'bg-[#8B5CF6]/18 text-[#A78BFA]'
-                    : 'text-[#A1A1B0] hover:text-[#F4F4F7]'
-                }`}
-              >
-                Creator
-              </button>
-            </div>
-
-            <Button
-              size="sm"
-              variant={isStudy ? 'cyan' : 'primary'}
-              onClick={() => outletContext.openUploadModal?.()}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {cfg.primaryAction.label}
-            </Button>
             <Button
               size="sm"
               variant="secondary"
