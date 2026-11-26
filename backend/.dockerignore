@@ -1,0 +1,11 @@
+# Exclude directories that must NOT go into the Docker build context
+node_modules
+uploads
+storage
+.env
+.env.*
+!.env.example
+*.log
+logs
+tests
+.git
